@@ -11,22 +11,46 @@ import (
 const (
 	defaultPort                = "8080"
 	defaultEnvironment         = "development"
+	defaultStorageDriver       = "memory"
 	defaultRoomCodeLength      = 6
 	defaultRoomExpirationHours = 2
 	defaultMaxPlayersPerRoom   = 10
+	defaultDBHost              = "localhost"
+	defaultDBPort              = 5432
+	defaultDBUser              = "postgres"
+	defaultDBPassword          = "postgres"
+	defaultDBName              = "tell_your_story"
+	defaultDBSSLMode           = "disable"
 )
 
 // Config holds all runtime configuration for the application.
 type Config struct {
-	Server ServerConfig
-	Game   GameConfig
-	CORS   CORSConfig
+	Server   ServerConfig
+	Storage  StorageConfig
+	Database DatabaseConfig
+	Game     GameConfig
+	CORS     CORSConfig
 }
 
 // ServerConfig contains HTTP server settings.
 type ServerConfig struct {
 	Port string
 	Env  string
+}
+
+// StorageConfig contains repository backend selection settings.
+type StorageConfig struct {
+	Driver string
+}
+
+// DatabaseConfig contains PostgreSQL connection settings.
+type DatabaseConfig struct {
+	Host     string
+	Port     int
+	User     string
+	Password string
+	Name     string
+	SSLMode  string
 }
 
 // GameConfig contains gameplay and room settings.
@@ -48,6 +72,17 @@ func Load() (Config, error) {
 			Port: getEnv("PORT", defaultPort),
 			Env:  getEnv("ENV", defaultEnvironment),
 		},
+		Storage: StorageConfig{
+			Driver: strings.ToLower(getEnv("STORAGE_DRIVER", defaultStorageDriver)),
+		},
+		Database: DatabaseConfig{
+			Host:     getEnv("DB_HOST", defaultDBHost),
+			Port:     getEnvInt("DB_PORT", defaultDBPort),
+			User:     getEnv("DB_USER", defaultDBUser),
+			Password: getEnv("DB_PASSWORD", defaultDBPassword),
+			Name:     getEnv("DB_NAME", defaultDBName),
+			SSLMode:  getEnv("DB_SSLMODE", defaultDBSSLMode),
+		},
 		Game: GameConfig{
 			RoomCodeLength:    getEnvInt("ROOM_CODE_LENGTH", defaultRoomCodeLength),
 			RoomExpiration:    time.Duration(getEnvInt("ROOM_EXPIRATION_HOURS", defaultRoomExpirationHours)) * time.Hour,
@@ -68,6 +103,14 @@ func Load() (Config, error) {
 
 	if cfg.Game.RoomExpiration <= 0 {
 		return Config{}, fmt.Errorf("ROOM_EXPIRATION_HOURS must be positive")
+	}
+
+	if cfg.Storage.Driver != "memory" && cfg.Storage.Driver != "postgres" {
+		return Config{}, fmt.Errorf("STORAGE_DRIVER must be one of: memory, postgres")
+	}
+
+	if cfg.Database.Port <= 0 {
+		return Config{}, fmt.Errorf("DB_PORT must be positive")
 	}
 
 	return cfg, nil

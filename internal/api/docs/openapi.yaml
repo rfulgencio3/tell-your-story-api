@@ -1,0 +1,559 @@
+openapi: 3.0.3
+info:
+  title: Tell Your Story API
+  version: 0.1.0
+  description: API for the Tell Your Story ice breaker game backend.
+servers:
+  - url: http://localhost:8080
+tags:
+  - name: Health
+  - name: Rooms
+  - name: Stories
+  - name: Votes
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Health check
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /api/rooms:
+    post:
+      tags: [Rooms]
+      summary: Create room
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRoomInput'
+      responses:
+        '201':
+          description: Room created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoomStateResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/rooms/{code}:
+    get:
+      tags: [Rooms]
+      summary: Get room state
+      parameters:
+        - $ref: '#/components/parameters/RoomCode'
+      responses:
+        '200':
+          description: Room fetched
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoomStateResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+        '410':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/rooms/{code}/join:
+    post:
+      tags: [Rooms]
+      summary: Join room
+      parameters:
+        - $ref: '#/components/parameters/RoomCode'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JoinRoomInput'
+      responses:
+        '200':
+          description: Joined room
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoomStateResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+        '410':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/rooms/{code}/leave:
+    post:
+      tags: [Rooms]
+      summary: Leave room
+      parameters:
+        - $ref: '#/components/parameters/RoomCode'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoomActionInput'
+      responses:
+        '200':
+          description: Left room
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoomStateResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/rooms/{code}/start:
+    post:
+      tags: [Rooms]
+      summary: Start or resume room
+      parameters:
+        - $ref: '#/components/parameters/RoomCode'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoomActionInput'
+      responses:
+        '200':
+          description: Room started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoomStateResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '403':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+        '410':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/rooms/{code}/pause:
+    post:
+      tags: [Rooms]
+      summary: Toggle pause state
+      parameters:
+        - $ref: '#/components/parameters/RoomCode'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoomActionInput'
+      responses:
+        '200':
+          description: Pause state updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoomStateResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '403':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/rooms/{code}/next-round:
+    post:
+      tags: [Rooms]
+      summary: Advance to next round
+      parameters:
+        - $ref: '#/components/parameters/RoomCode'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoomActionInput'
+      responses:
+        '200':
+          description: Advanced room
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoomStateResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '403':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+        '410':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/stories:
+    post:
+      tags: [Stories]
+      summary: Submit story
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitStoryInput'
+      responses:
+        '201':
+          description: Story submitted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoryResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/rounds/{roundId}/stories:
+    get:
+      tags: [Stories]
+      summary: List stories for round
+      parameters:
+        - $ref: '#/components/parameters/RoundID'
+      responses:
+        '200':
+          description: Round stories fetched
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoryCardsResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/votes:
+    post:
+      tags: [Votes]
+      summary: Submit vote
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitVoteInput'
+      responses:
+        '201':
+          description: Vote submitted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoteResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/rounds/{roundId}/votes:
+    get:
+      tags: [Votes]
+      summary: Get vote summary for round
+      parameters:
+        - $ref: '#/components/parameters/RoundID'
+      responses:
+        '200':
+          description: Round votes fetched
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoteSummariesResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/rounds/{roundId}/top-story:
+    get:
+      tags: [Votes]
+      summary: Get top story and reveal author
+      parameters:
+        - $ref: '#/components/parameters/RoundID'
+      responses:
+        '200':
+          description: Top story fetched
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopStoryResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+  /api/users/{userId}/rounds/{roundId}/vote:
+    get:
+      tags: [Votes]
+      summary: Get user vote for round
+      parameters:
+        - $ref: '#/components/parameters/UserID'
+        - $ref: '#/components/parameters/RoundID'
+      responses:
+        '200':
+          description: User vote fetched
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserVoteResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+components:
+  parameters:
+    RoomCode:
+      name: code
+      in: path
+      required: true
+      schema:
+        type: string
+    RoundID:
+      name: roundId
+      in: path
+      required: true
+      schema:
+        type: string
+    UserID:
+      name: userId
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    ErrorResponse:
+      description: Error response
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+  schemas:
+    HealthResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                status:
+                  type: string
+                  example: ok
+    SuccessEnvelope:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+      required: [success]
+    ErrorEnvelope:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: string
+        message:
+          type: string
+      required: [success, error, message]
+    CreateRoomInput:
+      type: object
+      properties:
+        host_nickname:
+          type: string
+        host_avatar_url:
+          type: string
+        max_rounds:
+          type: integer
+          minimum: 1
+          maximum: 5
+        time_per_round:
+          type: integer
+          minimum: 60
+          maximum: 300
+      required: [host_nickname, max_rounds, time_per_round]
+    JoinRoomInput:
+      type: object
+      properties:
+        nickname:
+          type: string
+        avatar_url:
+          type: string
+      required: [nickname]
+    RoomActionInput:
+      type: object
+      properties:
+        user_id:
+          type: string
+      required: [user_id]
+    SubmitStoryInput:
+      type: object
+      properties:
+        round_id:
+          type: string
+        user_id:
+          type: string
+        title:
+          type: string
+          maxLength: 100
+        body:
+          type: string
+          maxLength: 500
+      required: [round_id, user_id, title, body]
+    SubmitVoteInput:
+      type: object
+      properties:
+        round_id:
+          type: string
+        user_id:
+          type: string
+        story_id:
+          type: string
+      required: [round_id, user_id, story_id]
+    Room:
+      type: object
+      properties:
+        id: { type: string }
+        code: { type: string }
+        host_id: { type: string }
+        max_rounds: { type: integer }
+        time_per_round: { type: integer }
+        status: { type: string }
+        created_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+    User:
+      type: object
+      properties:
+        id: { type: string }
+        room_id: { type: string }
+        nickname: { type: string }
+        avatar_url: { type: string }
+        is_host: { type: boolean }
+        created_at: { type: string, format: date-time }
+    Round:
+      type: object
+      properties:
+        id: { type: string }
+        room_id: { type: string }
+        round_number: { type: integer }
+        status: { type: string }
+        started_at: { type: string, format: date-time }
+        paused_at: { type: string, format: date-time, nullable: true }
+        completed_at: { type: string, format: date-time, nullable: true }
+    Story:
+      type: object
+      properties:
+        id: { type: string }
+        round_id: { type: string }
+        user_id: { type: string }
+        title: { type: string }
+        body: { type: string }
+        is_revealed: { type: boolean }
+        created_at: { type: string, format: date-time }
+    Vote:
+      type: object
+      properties:
+        id: { type: string }
+        story_id: { type: string }
+        user_id: { type: string }
+        round_id: { type: string }
+        created_at: { type: string, format: date-time }
+    RoomState:
+      type: object
+      properties:
+        room:
+          $ref: '#/components/schemas/Room'
+        users:
+          type: array
+          items:
+            $ref: '#/components/schemas/User'
+        current_round:
+          allOf:
+            - $ref: '#/components/schemas/Round'
+          nullable: true
+    StoryCard:
+      type: object
+      properties:
+        id: { type: string }
+        round_id: { type: string }
+        title: { type: string }
+        body: { type: string }
+        is_revealed: { type: boolean }
+        vote_count: { type: integer }
+        created_at: { type: string, format: date-time }
+    VoteSummary:
+      type: object
+      properties:
+        story_id: { type: string }
+        vote_count: { type: integer }
+    UserVote:
+      type: object
+      properties:
+        user_id: { type: string }
+        round_id: { type: string }
+        story_id: { type: string }
+    TopStoryResult:
+      type: object
+      properties:
+        story:
+          $ref: '#/components/schemas/Story'
+        author:
+          $ref: '#/components/schemas/User'
+        vote_count:
+          type: integer
+    RoomStateResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/RoomState'
+    StoryResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/Story'
+    StoryCardsResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/StoryCard'
+    VoteResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/Vote'
+    VoteSummariesResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/VoteSummary'
+    UserVoteResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/UserVote'
+    TopStoryResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/TopStoryResult'

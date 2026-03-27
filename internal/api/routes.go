@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	apidocs "github.com/tell-your-story/backend/internal/api/docs"
 	"github.com/tell-your-story/backend/internal/api/handlers"
 	"github.com/tell-your-story/backend/internal/api/middleware"
 	"github.com/tell-your-story/backend/internal/api/respond"
@@ -24,12 +25,22 @@ func NewRouter(
 	roomHandler := handlers.NewRoomHandler(roomService)
 	storyHandler := handlers.NewStoryHandler(storyService)
 	voteHandler := handlers.NewVoteHandler(voteService)
+	docsHandler, err := apidocs.Handler()
+	if err != nil {
+		logger.Error("failed to initialize api docs", "err", err)
+	}
 
 	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
 		respond.JSON(w, http.StatusOK, "service is healthy", map[string]string{
 			"status": "ok",
 		})
 	})
+	if docsHandler != nil {
+		mux.Handle("/swagger/", http.StripPrefix("/swagger/", docsHandler))
+		mux.HandleFunc("/swagger", func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, "/swagger/", http.StatusMovedPermanently)
+		})
+	}
 	mux.HandleFunc("/api/rooms", roomHandler.CreateRoom)
 	mux.HandleFunc("/api/rooms/", roomHandler.HandleRoomRoutes)
 	mux.HandleFunc("/api/stories", storyHandler.SubmitStory)

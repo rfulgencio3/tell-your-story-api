@@ -13,9 +13,11 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/tell-your-story/backend/internal/api"
 	"github.com/tell-your-story/backend/internal/config"
+	"github.com/tell-your-story/backend/internal/database"
 	"github.com/tell-your-story/backend/internal/repository"
 	"github.com/tell-your-story/backend/internal/service"
 	pkglogger "github.com/tell-your-story/backend/pkg/logger"
+	"gorm.io/gorm"
 )
 
 func main() {
@@ -32,11 +34,25 @@ func main() {
 
 	logger := pkglogger.New(cfg.Server.Env)
 
-	roomRepo := repository.NewInMemoryRoomRepository()
-	userRepo := repository.NewInMemoryUserRepository()
-	roundRepo := repository.NewInMemoryRoundRepository()
-	storyRepo := repository.NewInMemoryStoryRepository()
-	voteRepo := repository.NewInMemoryVoteRepository()
+	roomRepo, userRepo, roundRepo, storyRepo, voteRepo, db, err := buildRepositories(context.Background(), cfg, logger)
+	if err != nil {
+		logger.Error("failed to initialize storage", "driver", cfg.Storage.Driver, "err", err)
+		os.Exit(1)
+	}
+
+	if db != nil {
+		sqlDB, sqlErr := db.DB()
+		if sqlErr != nil {
+			logger.Error("failed to resolve sql db", "err", sqlErr)
+			os.Exit(1)
+		}
+		defer func() {
+			if closeErr := sqlDB.Close(); closeErr != nil {
+				logger.Error("failed to close sql db", "err", closeErr)
+			}
+		}()
+	}
+
 	roomService := service.NewRoomService(cfg.Game, roomRepo, userRepo, roundRepo)
 	storyService := service.NewStoryService(roundRepo, userRepo, storyRepo, voteRepo)
 	voteService := service.NewVoteService(roundRepo, userRepo, storyRepo, voteRepo)
@@ -75,4 +91,44 @@ func main() {
 	}
 
 	logger.Info("server stopped")
+}
+
+func buildRepositories(
+	ctx context.Context,
+	cfg config.Config,
+	logger *slog.Logger,
+) (
+	repository.RoomRepository,
+	repository.UserRepository,
+	repository.RoundRepository,
+	repository.StoryRepository,
+	repository.VoteRepository,
+	*gorm.DB,
+	error,
+) {
+	switch cfg.Storage.Driver {
+	case "postgres":
+		db, err := database.Connect(ctx, cfg.Database)
+		if err != nil {
+			return nil, nil, nil, nil, nil, nil, err
+		}
+
+		logger.Info("storage initialized", "driver", cfg.Storage.Driver, "database", cfg.Database.Name)
+		return repository.NewGormRoomRepository(db),
+			repository.NewGormUserRepository(db),
+			repository.NewGormRoundRepository(db),
+			repository.NewGormStoryRepository(db),
+			repository.NewGormVoteRepository(db),
+			db,
+			nil
+	default:
+		logger.Info("storage initialized", "driver", cfg.Storage.Driver)
+		return repository.NewInMemoryRoomRepository(),
+			repository.NewInMemoryUserRepository(),
+			repository.NewInMemoryRoundRepository(),
+			repository.NewInMemoryStoryRepository(),
+			repository.NewInMemoryVoteRepository(),
+			nil,
+			nil
+	}
 }

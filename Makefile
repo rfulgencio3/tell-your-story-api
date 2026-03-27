@@ -1,4 +1,4 @@
-.PHONY: help run build test test-coverage clean lint fmt docker-up docker-down docker-build deps dev-setup dev-watch
+.PHONY: help run build test test-coverage clean lint fmt docker-up docker-down docker-build deps dev-setup dev-watch swagger-url
 
 BINARY_NAME=tell-your-story
 MAIN_PATH=./cmd/server
@@ -51,3 +51,6 @@ dev-setup: ## Setup development tools
 
 dev-watch: ## Watch for changes (air)
 	air
+
+swagger-url: ## Print Swagger UI URL
+	@echo http://localhost:8080/swagger/
