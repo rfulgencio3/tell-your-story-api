@@ -6,27 +6,30 @@ Backend em Go para o jogo de ice breaker "Tell Your Story".
 
 - Go 1.21+
 - HTTP com `net/http`
-- OpenAPI/Swagger embutido no binário
-- Storage configurável:
-  - `memory` para desenvolvimento rápido
-  - `postgres` com GORM para persistência real
+- OpenAPI/Swagger embutido no binario
+- Storage configuravel:
+  - `memory` para desenvolvimento rapido
+  - `postgres` com GORM para persistencia real
+- WebSocket para sincronizacao de sala em tempo real
 
 ## Funcionalidades atuais
 
-- criação e consulta de salas
-- entrada e saída de participantes
-- início, pausa e avanço de rodadas
-- submissão de histórias
-- votação com prevenção de voto duplicado
-- revelação da história vencedora
-- documentação Swagger em runtime
+- criacao e consulta de salas
+- entrada e saida de participantes
+- inicio, pausa e avanco de rodadas
+- maquina de estados de rodada: `writing -> voting -> revealed`
+- submissao de historias
+- votacao com prevencao de voto duplicado
+- revelacao da historia vencedora
+- documentacao Swagger em runtime
+- eventos realtime para presenca, estado de sala, progresso de historias e progresso de votos
 
 ## Requisitos
 
 - Go 1.21 ou superior
 - opcional: PostgreSQL local se quiser usar `STORAGE_DRIVER=postgres`
 
-## Configuração
+## Configuracao
 
 Crie o arquivo `.env` a partir do exemplo:
 
@@ -34,7 +37,7 @@ Crie o arquivo `.env` a partir do exemplo:
 Copy-Item .env.example .env
 ```
 
-### Modo mais simples: memória
+### Modo mais simples: memoria
 
 Use estes valores no `.env`:
 
@@ -64,14 +67,14 @@ DB_SSLMODE=disable
 
 ### Sem Docker Compose
 
-Modo em memória:
+Modo em memoria:
 
 ```powershell
 Copy-Item .env.example .env
 go run ./cmd/server/main.go
 ```
 
-Modo com PostgreSQL já instalado na máquina:
+Modo com PostgreSQL ja instalado na maquina:
 
 ```powershell
 Copy-Item .env.example .env
@@ -85,7 +88,7 @@ go run ./cmd/server/main.go
 make run
 ```
 
-Se `make` não estiver disponível no Windows, use `go run ./cmd/server/main.go`.
+Se `make` nao estiver disponivel no Windows, use `go run ./cmd/server/main.go`.
 
 ## Como rodar com Docker Compose
 
@@ -94,13 +97,14 @@ Copy-Item .env.example .env
 docker-compose up -d --build
 ```
 
-## URLs úteis
+## URLs uteis
 
 - Health check: `http://localhost:8080/health`
 - Swagger UI: `http://localhost:8080/swagger/`
 - OpenAPI YAML: `http://localhost:8080/swagger/openapi.yaml`
+- WebSocket: `ws://localhost:8080/ws?room_code=SEU_CODIGO&user_id=SEU_USER_ID`
 
-## Comandos úteis
+## Comandos uteis
 
 ```powershell
 go test ./...
@@ -138,7 +142,31 @@ make swagger-url
 - `GET /api/rounds/{roundId}/top-story`
 - `GET /api/users/{userId}/rounds/{roundId}/vote`
 
-## Exemplo rápido
+### Realtime
+
+- `GET /ws?room_code={code}&user_id={userId}` para upgrade WebSocket
+
+Mensagens aceitas do cliente:
+
+- `{"type":"ping"}`
+- `{"type":"room.sync"}`
+- `{"type":"story.progress.request"}`
+- `{"type":"vote.progress.request"}`
+
+Eventos publicados pelo servidor:
+
+- `connection.ready`
+- `presence.joined`
+- `presence.left`
+- `room.state`
+- `story.progress`
+- `vote.progress`
+- `round.revealed`
+- `room.expired`
+- `pong`
+- `error`
+
+## Exemplo rapido
 
 Criar sala:
 
@@ -159,22 +187,22 @@ Invoke-RestMethod -Method Post `
 ## Estrutura do projeto
 
 ```text
-cmd/server              entrypoint da aplicação
+cmd/server              entrypoint da aplicacao
 internal/api            rotas, handlers, middleware e docs
-internal/config         leitura e validação de config
-internal/database       conexão PostgreSQL
-internal/domain         modelos e erros de domínio
-internal/repository     repositórios memory e GORM
-internal/service        regras de negócio
+internal/config         leitura e validacao de config
+internal/database       conexao PostgreSQL
+internal/domain         modelos e erros de dominio
+internal/repository     repositorios memory e GORM
+internal/service        regras de negocio
+internal/websocket      hub realtime e eventos de sala
 pkg/logger              logger estruturado
-pkg/utils               utilitários
-pkg/validator           validações de entrada
+pkg/utils               utilitarios
+pkg/validator           validacoes de entrada
 ```
 
 ## Estado atual
 
-- a API já roda localmente
-- o Swagger já está disponível em `/swagger/`
-- os testes atuais cobrem a camada de serviço
-- WebSocket ainda não foi implementado
-
+- a API ja roda localmente
+- o Swagger ja esta disponivel em `/swagger/`
+- os testes atuais cobrem a camada de servico
+- o WebSocket ja publica eventos de presenca, sincronizacao de sala, progresso de historias e progresso de votos

@@ -16,6 +16,7 @@ import (
 	"github.com/tell-your-story/backend/internal/database"
 	"github.com/tell-your-story/backend/internal/repository"
 	"github.com/tell-your-story/backend/internal/service"
+	internalws "github.com/tell-your-story/backend/internal/websocket"
 	pkglogger "github.com/tell-your-story/backend/pkg/logger"
 	"gorm.io/gorm"
 )
@@ -56,8 +57,12 @@ func main() {
 	roomService := service.NewRoomService(cfg.Game, roomRepo, userRepo, roundRepo)
 	storyService := service.NewStoryService(roomRepo, roundRepo, userRepo, storyRepo, voteRepo)
 	voteService := service.NewVoteService(roomRepo, roundRepo, userRepo, storyRepo, voteRepo)
+	wsManager := internalws.NewManager(logger, roomService, roomRepo, userRepo, roundRepo, storyRepo, voteRepo)
+	serverCtx, serverCancel := context.WithCancel(context.Background())
+	defer serverCancel()
+	go wsManager.Start(serverCtx)
 
-	router := api.NewRouter(cfg, logger, roomService, storyService, voteService)
+	router := api.NewRouter(cfg, logger, roomService, storyService, voteService, wsManager, wsManager)
 
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%s", cfg.Server.Port),
@@ -82,6 +87,7 @@ func main() {
 
 	<-quit
 	logger.Info("shutting down server")
+	serverCancel()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

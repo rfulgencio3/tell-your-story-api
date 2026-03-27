@@ -10,7 +10,53 @@ tags:
   - name: Rooms
   - name: Stories
   - name: Votes
+  - name: Realtime
 paths:
+  /ws:
+    get:
+      tags: [Realtime]
+      summary: WebSocket room stream
+      description: |
+        Upgrades the connection to WebSocket and subscribes the client to a room.
+        Use the `room_code` and `user_id` query parameters.
+        Supported client messages:
+        - `ping`
+        - `room.sync`
+        - `story.progress.request`
+        - `vote.progress.request`
+        Server events:
+        - `connection.ready`
+        - `presence.joined`
+        - `presence.left`
+        - `room.state`
+        - `story.progress`
+        - `vote.progress`
+        - `round.revealed`
+        - `room.expired`
+        - `pong`
+        - `error`
+      parameters:
+        - name: room_code
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: user_id
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '101':
+          description: Switching Protocols
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '403':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+        '410':
+          $ref: '#/components/responses/ErrorResponse'
   /health:
     get:
       tags: [Health]

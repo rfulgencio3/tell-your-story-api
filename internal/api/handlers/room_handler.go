@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -14,11 +15,15 @@ import (
 // RoomHandler exposes room endpoints.
 type RoomHandler struct {
 	roomService *service.RoomService
+	notifier    RealtimeNotifier
 }
 
 // NewRoomHandler creates a room handler.
-func NewRoomHandler(roomService *service.RoomService) *RoomHandler {
-	return &RoomHandler{roomService: roomService}
+func NewRoomHandler(roomService *service.RoomService, notifier RealtimeNotifier) *RoomHandler {
+	return &RoomHandler{
+		roomService: roomService,
+		notifier:    notifier,
+	}
 }
 
 // CreateRoom handles POST /api/rooms.
@@ -41,6 +46,7 @@ func (h *RoomHandler) CreateRoom(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respond.JSON(w, http.StatusCreated, "room created successfully", state)
+	h.notifyRoomState(r.Context(), state.Room.Code)
 }
 
 // HandleRoomRoutes dispatches room-code routes.
@@ -105,6 +111,7 @@ func (h *RoomHandler) joinRoom(w http.ResponseWriter, r *http.Request, code stri
 	}
 
 	respond.JSON(w, http.StatusOK, "user joined room successfully", state)
+	h.notifyRoomState(r.Context(), state.Room.Code)
 }
 
 func (h *RoomHandler) leaveRoom(w http.ResponseWriter, r *http.Request, code string) {
@@ -121,6 +128,7 @@ func (h *RoomHandler) leaveRoom(w http.ResponseWriter, r *http.Request, code str
 	}
 
 	respond.JSON(w, http.StatusOK, "user left room successfully", state)
+	h.notifyRoomState(r.Context(), state.Room.Code)
 }
 
 func (h *RoomHandler) startRoom(w http.ResponseWriter, r *http.Request, code string) {
@@ -137,6 +145,7 @@ func (h *RoomHandler) startRoom(w http.ResponseWriter, r *http.Request, code str
 	}
 
 	respond.JSON(w, http.StatusOK, "room started successfully", state)
+	h.notifyRoomState(r.Context(), state.Room.Code)
 }
 
 func (h *RoomHandler) pauseRoom(w http.ResponseWriter, r *http.Request, code string) {
@@ -153,6 +162,7 @@ func (h *RoomHandler) pauseRoom(w http.ResponseWriter, r *http.Request, code str
 	}
 
 	respond.JSON(w, http.StatusOK, "room pause state updated successfully", state)
+	h.notifyRoomState(r.Context(), state.Room.Code)
 }
 
 func (h *RoomHandler) nextRound(w http.ResponseWriter, r *http.Request, code string) {
@@ -169,6 +179,7 @@ func (h *RoomHandler) nextRound(w http.ResponseWriter, r *http.Request, code str
 	}
 
 	respond.JSON(w, http.StatusOK, "room advanced successfully", state)
+	h.notifyRoomState(r.Context(), state.Room.Code)
 }
 
 func (h *RoomHandler) writeRoomError(w http.ResponseWriter, err error) {
@@ -205,4 +216,12 @@ func decodeActionInput(r *http.Request) (service.RoomActionInput, error) {
 	}
 
 	return input, nil
+}
+
+func (h *RoomHandler) notifyRoomState(ctx context.Context, roomCode string) {
+	if h.notifier == nil {
+		return
+	}
+
+	_ = h.notifier.BroadcastRoomState(ctx, roomCode)
 }

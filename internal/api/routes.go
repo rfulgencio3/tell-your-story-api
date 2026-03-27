@@ -20,11 +20,13 @@ func NewRouter(
 	roomService *service.RoomService,
 	storyService *service.StoryService,
 	voteService *service.VoteService,
+	notifier handlers.RealtimeNotifier,
+	wsHandler http.Handler,
 ) http.Handler {
 	mux := http.NewServeMux()
-	roomHandler := handlers.NewRoomHandler(roomService)
-	storyHandler := handlers.NewStoryHandler(storyService)
-	voteHandler := handlers.NewVoteHandler(voteService)
+	roomHandler := handlers.NewRoomHandler(roomService, notifier)
+	storyHandler := handlers.NewStoryHandler(storyService, notifier)
+	voteHandler := handlers.NewVoteHandler(voteService, notifier)
 	docsHandler, err := apidocs.Handler()
 	if err != nil {
 		logger.Error("failed to initialize api docs", "err", err)
@@ -40,6 +42,9 @@ func NewRouter(
 		mux.HandleFunc("/swagger", func(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, "/swagger/", http.StatusMovedPermanently)
 		})
+	}
+	if wsHandler != nil {
+		mux.Handle("/ws", wsHandler)
 	}
 	mux.HandleFunc("/api/rooms", roomHandler.CreateRoom)
 	mux.HandleFunc("/api/rooms/", roomHandler.HandleRoomRoutes)

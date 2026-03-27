@@ -14,11 +14,15 @@ import (
 // StoryHandler exposes story endpoints.
 type StoryHandler struct {
 	storyService *service.StoryService
+	notifier     RealtimeNotifier
 }
 
 // NewStoryHandler creates a story handler.
-func NewStoryHandler(storyService *service.StoryService) *StoryHandler {
-	return &StoryHandler{storyService: storyService}
+func NewStoryHandler(storyService *service.StoryService, notifier RealtimeNotifier) *StoryHandler {
+	return &StoryHandler{
+		storyService: storyService,
+		notifier:     notifier,
+	}
 }
 
 // SubmitStory handles POST /api/stories.
@@ -41,6 +45,9 @@ func (h *StoryHandler) SubmitStory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respond.JSON(w, http.StatusCreated, "story submitted successfully", story)
+	if h.notifier != nil {
+		_ = h.notifier.BroadcastStoryProgress(r.Context(), story.RoundID)
+	}
 }
 
 // HandleRoundRoutes dispatches /api/rounds/{roundId}/stories requests.

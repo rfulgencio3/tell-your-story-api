@@ -14,11 +14,15 @@ import (
 // VoteHandler exposes vote endpoints.
 type VoteHandler struct {
 	voteService *service.VoteService
+	notifier    RealtimeNotifier
 }
 
 // NewVoteHandler creates a vote handler.
-func NewVoteHandler(voteService *service.VoteService) *VoteHandler {
-	return &VoteHandler{voteService: voteService}
+func NewVoteHandler(voteService *service.VoteService, notifier RealtimeNotifier) *VoteHandler {
+	return &VoteHandler{
+		voteService: voteService,
+		notifier:    notifier,
+	}
 }
 
 // SubmitVote handles POST /api/votes.
@@ -41,6 +45,9 @@ func (h *VoteHandler) SubmitVote(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respond.JSON(w, http.StatusCreated, "vote submitted successfully", vote)
+	if h.notifier != nil {
+		_ = h.notifier.BroadcastVoteProgress(r.Context(), vote.RoundID)
+	}
 }
 
 // HandleRoundRoutes dispatches vote-related round endpoints.
@@ -63,6 +70,9 @@ func (h *VoteHandler) HandleRoundRoutes(w http.ResponseWriter, r *http.Request, 
 		}
 
 		respond.JSON(w, http.StatusOK, "top story fetched successfully", topStory)
+		if h.notifier != nil {
+			_ = h.notifier.BroadcastTopStory(r.Context(), strings.TrimSpace(roundID), topStory)
+		}
 		return true
 	default:
 		return false
