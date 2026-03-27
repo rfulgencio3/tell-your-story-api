@@ -48,6 +48,7 @@ type RoomService struct {
 	roomRepo  repository.RoomRepository
 	userRepo  repository.UserRepository
 	roundRepo repository.RoundRepository
+	lifecycle roundLifecycle
 }
 
 // NewRoomService creates a RoomService.
@@ -62,6 +63,7 @@ func NewRoomService(
 		roomRepo:  roomRepo,
 		userRepo:  userRepo,
 		roundRepo: roundRepo,
+		lifecycle: newRoundLifecycle(roomRepo, roundRepo),
 	}
 }
 
@@ -133,6 +135,11 @@ func (s *RoomService) GetRoomState(ctx context.Context, code string) (RoomState,
 	}
 
 	if err := s.ensureRoomAvailable(ctx, room); err != nil {
+		return RoomState{}, err
+	}
+
+	room, err = s.syncRoomLifecycle(ctx, room)
+	if err != nil {
 		return RoomState{}, err
 	}
 
@@ -240,7 +247,7 @@ func (s *RoomService) StartGame(ctx context.Context, code string, input RoomActi
 
 	switch room.Status {
 	case domain.RoomStatusWaiting:
-		round, createErr := s.newRound(room.ID, 1)
+		round, createErr := s.newRound(room.ID, 1, room.TimePerRound)
 		if createErr != nil {
 			return RoomState{}, createErr
 		}
@@ -249,6 +256,13 @@ func (s *RoomService) StartGame(ctx context.Context, code string, input RoomActi
 		}
 		room.Status = domain.RoomStatusActive
 	case domain.RoomStatusPaused:
+		currentRound, roundErr := s.roundRepo.GetCurrentByRoomID(ctx, room.ID)
+		if roundErr != nil {
+			return RoomState{}, roundErr
+		}
+		if _, roundErr = s.lifecycle.ResumeRound(ctx, currentRound, time.Now().UTC()); roundErr != nil {
+			return RoomState{}, roundErr
+		}
 		room.Status = domain.RoomStatusActive
 	default:
 		return RoomState{}, domain.ErrInvalidRoomState
@@ -291,19 +305,29 @@ func (s *RoomService) PauseRound(ctx context.Context, code string, input RoomAct
 		if room.Status == domain.RoomStatusPaused {
 			round.PausedAt = &now
 		} else {
-			round.PausedAt = nil
+			round, err = s.lifecycle.ResumeRound(ctx, round, now)
+			if err != nil {
+				return RoomState{}, err
+			}
 		}
-		if updateErr := s.roundRepo.Update(ctx, round); updateErr != nil {
-			return RoomState{}, fmt.Errorf("update round pause state: %w", updateErr)
+		if room.Status == domain.RoomStatusPaused {
+			if updateErr := s.roundRepo.Update(ctx, round); updateErr != nil {
+				return RoomState{}, fmt.Errorf("update round pause state: %w", updateErr)
+			}
 		}
 	} else if !errors.Is(err, domain.ErrRoundNotFound) {
+		return RoomState{}, err
+	}
+
+	room, err = s.syncRoomLifecycle(ctx, room)
+	if err != nil {
 		return RoomState{}, err
 	}
 
 	return s.buildRoomState(ctx, room)
 }
 
-// NextRound advances to the next round or finishes the room.
+// NextRound advances the round phase, starts the next round, or finishes the room.
 func (s *RoomService) NextRound(ctx context.Context, code string, input RoomActionInput) (RoomState, error) {
 	room, err := s.roomRepo.GetByCode(ctx, strings.ToUpper(strings.TrimSpace(code)))
 	if err != nil {
@@ -318,38 +342,50 @@ func (s *RoomService) NextRound(ctx context.Context, code string, input RoomActi
 		return RoomState{}, err
 	}
 
+	room, err = s.syncRoomLifecycle(ctx, room)
+	if err != nil {
+		return RoomState{}, err
+	}
+
 	currentRound, err := s.roundRepo.GetCurrentByRoomID(ctx, room.ID)
 	if err != nil {
 		return RoomState{}, err
 	}
 
 	now := time.Now().UTC()
-	currentRound.Status = domain.RoundStatusRevealed
-	currentRound.CompletedAt = &now
-	if err := s.roundRepo.Update(ctx, currentRound); err != nil {
-		return RoomState{}, fmt.Errorf("complete current round: %w", err)
-	}
-
-	if currentRound.RoundNumber >= room.MaxRounds {
-		room.Status = domain.RoomStatusFinished
-		if err := s.roomRepo.Update(ctx, room); err != nil {
-			return RoomState{}, fmt.Errorf("finish room: %w", err)
+	switch currentRound.Status {
+	case domain.RoundStatusWriting:
+		if _, err := s.lifecycle.advanceToVoting(ctx, currentRound, now); err != nil {
+			return RoomState{}, err
 		}
-		return s.buildRoomState(ctx, room)
-	}
+	case domain.RoundStatusVoting:
+		if _, err := s.lifecycle.advanceToRevealed(ctx, currentRound, now); err != nil {
+			return RoomState{}, err
+		}
+	case domain.RoundStatusRevealed:
+		if currentRound.RoundNumber >= room.MaxRounds {
+			room.Status = domain.RoomStatusFinished
+			if err := s.roomRepo.Update(ctx, room); err != nil {
+				return RoomState{}, fmt.Errorf("finish room: %w", err)
+			}
+			return s.buildRoomState(ctx, room)
+		}
 
-	nextRound, err := s.newRound(room.ID, currentRound.RoundNumber+1)
-	if err != nil {
-		return RoomState{}, err
-	}
+		nextRound, err := s.newRound(room.ID, currentRound.RoundNumber+1, room.TimePerRound)
+		if err != nil {
+			return RoomState{}, err
+		}
 
-	room.Status = domain.RoomStatusActive
-	if err := s.roomRepo.Update(ctx, room); err != nil {
-		return RoomState{}, fmt.Errorf("update room status: %w", err)
-	}
+		room.Status = domain.RoomStatusActive
+		if err := s.roomRepo.Update(ctx, room); err != nil {
+			return RoomState{}, fmt.Errorf("update room status: %w", err)
+		}
 
-	if err := s.roundRepo.Create(ctx, nextRound); err != nil {
-		return RoomState{}, fmt.Errorf("create next round: %w", err)
+		if err := s.roundRepo.Create(ctx, nextRound); err != nil {
+			return RoomState{}, fmt.Errorf("create next round: %w", err)
+		}
+	default:
+		return RoomState{}, domain.ErrInvalidRoundState
 	}
 
 	return s.buildRoomState(ctx, room)
@@ -368,6 +404,14 @@ func (s *RoomService) buildRoomState(ctx context.Context, room domain.Room) (Roo
 
 	round, err := s.roundRepo.GetCurrentByRoomID(ctx, room.ID)
 	if err == nil {
+		room, err = s.syncRoomLifecycle(ctx, room)
+		if err != nil {
+			return RoomState{}, err
+		}
+		round, err = s.roundRepo.GetCurrentByRoomID(ctx, room.ID)
+		if err != nil {
+			return RoomState{}, err
+		}
 		state.CurrentRound = &round
 	} else if !errors.Is(err, domain.ErrRoundNotFound) {
 		return RoomState{}, err
@@ -425,17 +469,38 @@ func (s *RoomService) ensureRoomAvailable(ctx context.Context, room domain.Room)
 	return nil
 }
 
-func (s *RoomService) newRound(roomID string, number int) (domain.Round, error) {
+func (s *RoomService) syncRoomLifecycle(ctx context.Context, room domain.Room) (domain.Room, error) {
+	currentRound, err := s.roundRepo.GetCurrentByRoomID(ctx, room.ID)
+	if errors.Is(err, domain.ErrRoundNotFound) {
+		return room, nil
+	}
+	if err != nil {
+		return domain.Room{}, err
+	}
+
+	_, _, err = s.lifecycle.SyncRound(ctx, currentRound)
+	if err != nil {
+		return domain.Room{}, err
+	}
+
+	return room, nil
+}
+
+func (s *RoomService) newRound(roomID string, number int, timePerRoundSeconds int) (domain.Round, error) {
 	roundID, err := utils.GenerateID()
 	if err != nil {
 		return domain.Round{}, fmt.Errorf("generate round id: %w", err)
 	}
+
+	now := time.Now().UTC()
+	phaseEndsAt := now.Add(time.Duration(timePerRoundSeconds) * time.Second)
 
 	return domain.Round{
 		ID:          roundID,
 		RoomID:      roomID,
 		RoundNumber: number,
 		Status:      domain.RoundStatusWriting,
-		StartedAt:   time.Now().UTC(),
+		StartedAt:   now,
+		PhaseEndsAt: &phaseEndsAt,
 	}, nil
 }

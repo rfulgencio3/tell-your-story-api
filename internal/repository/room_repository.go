@@ -10,6 +10,7 @@ import (
 // RoomRepository defines persistence operations for rooms.
 type RoomRepository interface {
 	Create(ctx context.Context, room domain.Room) error
+	GetByID(ctx context.Context, id string) (domain.Room, error)
 	GetByCode(ctx context.Context, code string) (domain.Room, error)
 	Update(ctx context.Context, room domain.Room) error
 }
@@ -51,6 +52,19 @@ func (r *InMemoryRoomRepository) GetByCode(_ context.Context, code string) (doma
 	}
 
 	room, exists := r.byID[roomID]
+	if !exists {
+		return domain.Room{}, domain.ErrRoomNotFound
+	}
+
+	return room, nil
+}
+
+// GetByID fetches a room by its id.
+func (r *InMemoryRoomRepository) GetByID(_ context.Context, id string) (domain.Room, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	room, exists := r.byID[id]
 	if !exists {
 		return domain.Room{}, domain.ErrRoomNotFound
 	}

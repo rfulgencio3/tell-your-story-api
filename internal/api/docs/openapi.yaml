@@ -167,7 +167,7 @@ paths:
   /api/rooms/{code}/next-round:
     post:
       tags: [Rooms]
-      summary: Advance to next round
+      summary: Advance round phase or move to next round
       parameters:
         - $ref: '#/components/parameters/RoomCode'
       requestBody:
@@ -441,6 +441,7 @@ components:
         round_number: { type: integer }
         status: { type: string }
         started_at: { type: string, format: date-time }
+        phase_ends_at: { type: string, format: date-time, nullable: true }
         paused_at: { type: string, format: date-time, nullable: true }
         completed_at: { type: string, format: date-time, nullable: true }
     Story:

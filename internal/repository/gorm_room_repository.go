@@ -41,6 +41,19 @@ func (r *GormRoomRepository) GetByCode(ctx context.Context, code string) (domain
 	return room, nil
 }
 
+// GetByID fetches a room by its id.
+func (r *GormRoomRepository) GetByID(ctx context.Context, id string) (domain.Room, error) {
+	var room domain.Room
+	if err := r.db.WithContext(ctx).Where("id = ?", id).First(&room).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return domain.Room{}, domain.ErrRoomNotFound
+		}
+		return domain.Room{}, fmt.Errorf("select room by id: %w", err)
+	}
+
+	return room, nil
+}
+
 // Update overwrites a room.
 func (r *GormRoomRepository) Update(ctx context.Context, room domain.Room) error {
 	result := r.db.WithContext(ctx).Model(&domain.Room{}).Where("id = ?", room.ID).Select("*").Updates(&room)

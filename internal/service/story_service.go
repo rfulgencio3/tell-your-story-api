@@ -40,24 +40,29 @@ type StoryCard struct {
 
 // StoryService contains story submission logic.
 type StoryService struct {
+	roomRepo  repository.RoomRepository
 	roundRepo repository.RoundRepository
 	userRepo  repository.UserRepository
 	storyRepo repository.StoryRepository
 	voteRepo  repository.VoteRepository
+	lifecycle roundLifecycle
 }
 
 // NewStoryService creates a StoryService.
 func NewStoryService(
+	roomRepo repository.RoomRepository,
 	roundRepo repository.RoundRepository,
 	userRepo repository.UserRepository,
 	storyRepo repository.StoryRepository,
 	voteRepo repository.VoteRepository,
 ) *StoryService {
 	return &StoryService{
+		roomRepo:  roomRepo,
 		roundRepo: roundRepo,
 		userRepo:  userRepo,
 		storyRepo: storyRepo,
 		voteRepo:  voteRepo,
+		lifecycle: newRoundLifecycle(roomRepo, roundRepo),
 	}
 }
 
@@ -70,6 +75,15 @@ func (s *StoryService) SubmitStory(ctx context.Context, input SubmitStoryInput) 
 	round, err := s.roundRepo.GetByID(ctx, strings.TrimSpace(input.RoundID))
 	if err != nil {
 		return domain.Story{}, err
+	}
+
+	room, round, err := s.lifecycle.SyncRound(ctx, round)
+	if err != nil {
+		return domain.Story{}, err
+	}
+
+	if room.Status != domain.RoomStatusActive || round.Status != domain.RoundStatusWriting {
+		return domain.Story{}, domain.ErrInvalidRoundState
 	}
 
 	user, err := s.userRepo.GetByID(ctx, strings.TrimSpace(input.UserID))
@@ -114,6 +128,15 @@ func (s *StoryService) GetRoundStories(ctx context.Context, roundID string) ([]S
 	round, err := s.roundRepo.GetByID(ctx, strings.TrimSpace(roundID))
 	if err != nil {
 		return nil, err
+	}
+
+	room, round, err := s.lifecycle.SyncRound(ctx, round)
+	if err != nil {
+		return nil, err
+	}
+
+	if room.Status == domain.RoomStatusWaiting || round.Status == domain.RoundStatusWriting {
+		return nil, domain.ErrInvalidRoundState
 	}
 
 	stories, err := s.storyRepo.ListByRoundID(ctx, round.ID)

@@ -51,6 +51,21 @@ func TestSubmitVoteRejectsSelfVote(t *testing.T) {
 	}
 }
 
+func TestSubmitStoryRejectsWhenRoundNotWriting(t *testing.T) {
+	t.Parallel()
+
+	fixture := newGameplayFixture(t)
+
+	if _, err := fixture.storyService.SubmitStory(context.Background(), SubmitStoryInput{
+		RoundID: fixture.roundID,
+		UserID:  fixture.guestID,
+		Title:   "Late story",
+		Body:    "This should fail",
+	}); err != domain.ErrInvalidRoundState {
+		t.Fatalf("SubmitStory() error = %v, want %v", err, domain.ErrInvalidRoundState)
+	}
+}
+
 type gameplayFixture struct {
 	roomService  *RoomService
 	storyService *StoryService
@@ -75,8 +90,8 @@ func newGameplayFixture(t *testing.T) gameplayFixture {
 		RoomExpiration:    2 * time.Hour,
 		MaxPlayersPerRoom: 10,
 	}, roomRepo, userRepo, roundRepo)
-	storyService := NewStoryService(roundRepo, userRepo, storyRepo, voteRepo)
-	voteService := NewVoteService(roundRepo, userRepo, storyRepo, voteRepo)
+	storyService := NewStoryService(roomRepo, roundRepo, userRepo, storyRepo, voteRepo)
+	voteService := NewVoteService(roomRepo, roundRepo, userRepo, storyRepo, voteRepo)
 
 	state, err := roomService.CreateRoom(context.Background(), CreateRoomInput{
 		HostNickname: "Host",
@@ -126,6 +141,12 @@ func newGameplayFixture(t *testing.T) gameplayFixture {
 		Body:    "Another fun fact",
 	}); err != nil {
 		t.Fatalf("SubmitStory(guest) error = %v", err)
+	}
+
+	if _, err := roomService.NextRound(context.Background(), state.Room.Code, RoomActionInput{
+		UserID: state.Room.HostID,
+	}); err != nil {
+		t.Fatalf("NextRound() error = %v", err)
 	}
 
 	return gameplayFixture{

@@ -42,24 +42,29 @@ type TopStoryResult struct {
 
 // VoteService contains vote rules and winner selection.
 type VoteService struct {
+	roomRepo  repository.RoomRepository
 	roundRepo repository.RoundRepository
 	userRepo  repository.UserRepository
 	storyRepo repository.StoryRepository
 	voteRepo  repository.VoteRepository
+	lifecycle roundLifecycle
 }
 
 // NewVoteService creates a VoteService.
 func NewVoteService(
+	roomRepo repository.RoomRepository,
 	roundRepo repository.RoundRepository,
 	userRepo repository.UserRepository,
 	storyRepo repository.StoryRepository,
 	voteRepo repository.VoteRepository,
 ) *VoteService {
 	return &VoteService{
+		roomRepo:  roomRepo,
 		roundRepo: roundRepo,
 		userRepo:  userRepo,
 		storyRepo: storyRepo,
 		voteRepo:  voteRepo,
+		lifecycle: newRoundLifecycle(roomRepo, roundRepo),
 	}
 }
 
@@ -68,6 +73,15 @@ func (s *VoteService) SubmitVote(ctx context.Context, input SubmitVoteInput) (do
 	round, err := s.roundRepo.GetByID(ctx, strings.TrimSpace(input.RoundID))
 	if err != nil {
 		return domain.Vote{}, err
+	}
+
+	room, round, err := s.lifecycle.SyncRound(ctx, round)
+	if err != nil {
+		return domain.Vote{}, err
+	}
+
+	if room.Status != domain.RoomStatusActive || round.Status != domain.RoundStatusVoting {
+		return domain.Vote{}, domain.ErrInvalidRoundState
 	}
 
 	user, err := s.userRepo.GetByID(ctx, strings.TrimSpace(input.UserID))
@@ -121,6 +135,15 @@ func (s *VoteService) GetRoundVotes(ctx context.Context, roundID string) ([]Vote
 		return nil, err
 	}
 
+	_, round, err = s.lifecycle.SyncRound(ctx, round)
+	if err != nil {
+		return nil, err
+	}
+
+	if round.Status == domain.RoundStatusWriting {
+		return nil, domain.ErrInvalidRoundState
+	}
+
 	votes, err := s.voteRepo.ListByRoundID(ctx, round.ID)
 	if err != nil {
 		return nil, err
@@ -168,6 +191,15 @@ func (s *VoteService) GetTopStory(ctx context.Context, roundID string) (TopStory
 	round, err := s.roundRepo.GetByID(ctx, strings.TrimSpace(roundID))
 	if err != nil {
 		return TopStoryResult{}, err
+	}
+
+	room, round, err := s.lifecycle.SyncRound(ctx, round)
+	if err != nil {
+		return TopStoryResult{}, err
+	}
+
+	if room.Status == domain.RoomStatusWaiting || round.Status != domain.RoundStatusRevealed {
+		return TopStoryResult{}, domain.ErrInvalidRoundState
 	}
 
 	stories, err := s.storyRepo.ListByRoundID(ctx, round.ID)

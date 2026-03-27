@@ -65,8 +65,12 @@ func (h *StoryHandler) writeStoryError(w http.ResponseWriter, err error) {
 		respond.Error(w, http.StatusNotFound, "round_not_found", err.Error())
 	case errors.Is(err, domain.ErrUserNotFound):
 		respond.Error(w, http.StatusNotFound, "user_not_found", err.Error())
+	case errors.Is(err, domain.ErrRoomExpired):
+		respond.Error(w, http.StatusGone, "room_expired", err.Error())
 	case errors.Is(err, domain.ErrStoryAlreadySubmitted):
 		respond.Error(w, http.StatusConflict, "story_already_submitted", err.Error())
+	case errors.Is(err, domain.ErrInvalidRoundState):
+		respond.Error(w, http.StatusConflict, "invalid_round_state", err.Error())
 	default:
 		respond.Error(w, http.StatusBadRequest, "bad_request", err.Error())
 	}

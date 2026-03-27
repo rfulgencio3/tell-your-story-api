@@ -13,6 +13,8 @@ var (
 	ErrRoomAlreadyStarted = errors.New("room already started")
 	// ErrInvalidRoomState indicates the room is in an invalid state for the operation.
 	ErrInvalidRoomState = errors.New("invalid room state")
+	// ErrInvalidRoundState indicates the round is in an invalid state for the operation.
+	ErrInvalidRoundState = errors.New("invalid round state")
 	// ErrUserNotFound indicates the requested user does not exist.
 	ErrUserNotFound = errors.New("user not found")
 	// ErrNotRoomHost indicates only the room host can perform the operation.

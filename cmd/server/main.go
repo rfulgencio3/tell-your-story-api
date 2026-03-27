@@ -54,8 +54,8 @@ func main() {
 	}
 
 	roomService := service.NewRoomService(cfg.Game, roomRepo, userRepo, roundRepo)
-	storyService := service.NewStoryService(roundRepo, userRepo, storyRepo, voteRepo)
-	voteService := service.NewVoteService(roundRepo, userRepo, storyRepo, voteRepo)
+	storyService := service.NewStoryService(roomRepo, roundRepo, userRepo, storyRepo, voteRepo)
+	voteService := service.NewVoteService(roomRepo, roundRepo, userRepo, storyRepo, voteRepo)
 
 	router := api.NewRouter(cfg, logger, roomService, storyService, voteService)
 

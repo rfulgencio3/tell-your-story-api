@@ -97,6 +97,8 @@ func (h *VoteHandler) writeVoteError(w http.ResponseWriter, err error) {
 		respond.Error(w, http.StatusNotFound, "round_not_found", err.Error())
 	case errors.Is(err, domain.ErrUserNotFound):
 		respond.Error(w, http.StatusNotFound, "user_not_found", err.Error())
+	case errors.Is(err, domain.ErrRoomExpired):
+		respond.Error(w, http.StatusGone, "room_expired", err.Error())
 	case errors.Is(err, domain.ErrStoryNotFound):
 		respond.Error(w, http.StatusNotFound, "story_not_found", err.Error())
 	case errors.Is(err, domain.ErrVoteNotFound):

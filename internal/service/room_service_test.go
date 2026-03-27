@@ -136,6 +136,28 @@ func TestNextRoundFinishesRoomOnLastRound(t *testing.T) {
 		t.Fatalf("StartGame() error = %v", err)
 	}
 
+	voting, err := svc.NextRound(context.Background(), state.Room.Code, RoomActionInput{
+		UserID: state.Room.HostID,
+	})
+	if err != nil {
+		t.Fatalf("NextRound() error = %v", err)
+	}
+
+	if voting.CurrentRound == nil || voting.CurrentRound.Status != domain.RoundStatusVoting {
+		t.Fatalf("round status = %v, want %v", voting.CurrentRound.Status, domain.RoundStatusVoting)
+	}
+
+	revealed, err := svc.NextRound(context.Background(), state.Room.Code, RoomActionInput{
+		UserID: state.Room.HostID,
+	})
+	if err != nil {
+		t.Fatalf("NextRound() error = %v", err)
+	}
+
+	if revealed.CurrentRound == nil || revealed.CurrentRound.Status != domain.RoundStatusRevealed {
+		t.Fatalf("round status = %v, want %v", revealed.CurrentRound.Status, domain.RoundStatusRevealed)
+	}
+
 	finished, err := svc.NextRound(context.Background(), state.Room.Code, RoomActionInput{
 		UserID: state.Room.HostID,
 	})
@@ -147,12 +169,65 @@ func TestNextRoundFinishesRoomOnLastRound(t *testing.T) {
 		t.Fatalf("room status = %q, want %q", finished.Room.Status, domain.RoomStatusFinished)
 	}
 
-	if finished.CurrentRound == nil {
+	if finished.CurrentRound == nil || finished.CurrentRound.ID != started.CurrentRound.ID {
+		t.Fatal("final state should still point to the completed last round")
+	}
+}
+
+func TestNextRoundStartsNewRoundAfterReveal(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestRoomService(config.GameConfig{
+		RoomCodeLength:    6,
+		RoomExpiration:    2 * time.Hour,
+		MaxPlayersPerRoom: 10,
+	})
+
+	state, err := svc.CreateRoom(context.Background(), CreateRoomInput{
+		HostNickname: "Host",
+		MaxRounds:    2,
+		TimePerRound: 120,
+	})
+	if err != nil {
+		t.Fatalf("CreateRoom() error = %v", err)
+	}
+
+	started, err := svc.StartGame(context.Background(), state.Room.Code, RoomActionInput{
+		UserID: state.Room.HostID,
+	})
+	if err != nil {
+		t.Fatalf("StartGame() error = %v", err)
+	}
+
+	for i := 0; i < 2; i++ {
+		if _, err := svc.NextRound(context.Background(), state.Room.Code, RoomActionInput{
+			UserID: state.Room.HostID,
+		}); err != nil {
+			t.Fatalf("NextRound() error = %v", err)
+		}
+	}
+
+	next, err := svc.NextRound(context.Background(), state.Room.Code, RoomActionInput{
+		UserID: state.Room.HostID,
+	})
+	if err != nil {
+		t.Fatalf("NextRound() error = %v", err)
+	}
+
+	if next.CurrentRound == nil {
 		t.Fatal("CurrentRound should not be nil")
 	}
 
-	if finished.CurrentRound.ID != started.CurrentRound.ID {
-		t.Fatal("final state should still point to the completed last round")
+	if next.CurrentRound.RoundNumber != 2 {
+		t.Fatalf("round number = %d, want 2", next.CurrentRound.RoundNumber)
+	}
+
+	if next.CurrentRound.ID == started.CurrentRound.ID {
+		t.Fatal("expected a new round to be created")
+	}
+
+	if next.CurrentRound.Status != domain.RoundStatusWriting {
+		t.Fatalf("round status = %q, want %q", next.CurrentRound.Status, domain.RoundStatusWriting)
 	}
 }
 
