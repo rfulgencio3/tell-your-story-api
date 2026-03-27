@@ -1,0 +1,41 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/bin/
+/bin/**
+/dist/
+
+# Build output
+build/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Go
+vendor/
+*.test
+*.out
+coverage.html
+coverage.out
+.gocache/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+.docker/
+
+# Air (live reload)
+tmp/
