@@ -21,10 +21,11 @@ var defaultBadWords = map[string]struct{}{
 
 // SubmitStoryInput carries story submission data.
 type SubmitStoryInput struct {
-	RoundID string `json:"round_id"`
-	UserID  string `json:"user_id"`
-	Title   string `json:"title"`
-	Body    string `json:"body"`
+	RoundID      string `json:"round_id"`
+	UserID       string `json:"user_id"`
+	SessionToken string `json:"session_token"`
+	Title        string `json:"title"`
+	Body         string `json:"body"`
 }
 
 // StoryCard is the public story payload returned to clients.
@@ -86,7 +87,7 @@ func (s *StoryService) SubmitStory(ctx context.Context, input SubmitStoryInput) 
 		return domain.Story{}, domain.ErrInvalidRoundState
 	}
 
-	user, err := s.userRepo.GetByID(ctx, strings.TrimSpace(input.UserID))
+	user, err := AuthenticateUserSession(ctx, s.userRepo, input.UserID, input.SessionToken)
 	if err != nil {
 		return domain.Story{}, err
 	}

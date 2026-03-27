@@ -37,6 +37,10 @@ func (h *StoryHandler) SubmitStory(w http.ResponseWriter, r *http.Request) {
 		respond.Error(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON")
 		return
 	}
+	if strings.TrimSpace(input.UserID) == "" || strings.TrimSpace(input.SessionToken) == "" {
+		respond.Error(w, http.StatusBadRequest, "bad_request", "user_id and session_token are required")
+		return
+	}
 
 	story, err := h.storyService.SubmitStory(r.Context(), input)
 	if err != nil {
@@ -72,6 +76,8 @@ func (h *StoryHandler) writeStoryError(w http.ResponseWriter, err error) {
 		respond.Error(w, http.StatusNotFound, "round_not_found", err.Error())
 	case errors.Is(err, domain.ErrUserNotFound):
 		respond.Error(w, http.StatusNotFound, "user_not_found", err.Error())
+	case errors.Is(err, domain.ErrInvalidSessionToken):
+		respond.Error(w, http.StatusUnauthorized, "invalid_session", err.Error())
 	case errors.Is(err, domain.ErrRoomExpired):
 		respond.Error(w, http.StatusGone, "room_expired", err.Error())
 	case errors.Is(err, domain.ErrStoryAlreadySubmitted):

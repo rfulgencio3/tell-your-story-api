@@ -23,6 +23,16 @@ func GenerateID() (string, error) {
 	return hex.EncodeToString(buffer), nil
 }
 
+// GenerateSessionToken returns a random session token suitable for client auth.
+func GenerateSessionToken() (string, error) {
+	buffer := make([]byte, 32)
+	if _, err := rand.Read(buffer); err != nil {
+		return "", fmt.Errorf("generate session token: %w", err)
+	}
+
+	return hex.EncodeToString(buffer), nil
+}
+
 // GenerateRoomCode returns a random, user-friendly room code.
 func GenerateRoomCode(length int) (string, error) {
 	buffer := make([]byte, length)

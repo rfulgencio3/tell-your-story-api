@@ -15,9 +15,10 @@ import (
 
 // SubmitVoteInput carries vote submission data.
 type SubmitVoteInput struct {
-	RoundID string `json:"round_id"`
-	UserID  string `json:"user_id"`
-	StoryID string `json:"story_id"`
+	RoundID      string `json:"round_id"`
+	UserID       string `json:"user_id"`
+	SessionToken string `json:"session_token"`
+	StoryID      string `json:"story_id"`
 }
 
 // VoteSummary contains per-story vote totals.
@@ -84,7 +85,7 @@ func (s *VoteService) SubmitVote(ctx context.Context, input SubmitVoteInput) (do
 		return domain.Vote{}, domain.ErrInvalidRoundState
 	}
 
-	user, err := s.userRepo.GetByID(ctx, strings.TrimSpace(input.UserID))
+	user, err := AuthenticateUserSession(ctx, s.userRepo, input.UserID, input.SessionToken)
 	if err != nil {
 		return domain.Vote{}, err
 	}
@@ -173,7 +174,11 @@ func (s *VoteService) GetRoundVotes(ctx context.Context, roundID string) ([]Vote
 }
 
 // GetUserVote returns the user's vote in a round.
-func (s *VoteService) GetUserVote(ctx context.Context, userID, roundID string) (UserVote, error) {
+func (s *VoteService) GetUserVote(ctx context.Context, userID, roundID, sessionToken string) (UserVote, error) {
+	if _, err := AuthenticateUserSession(ctx, s.userRepo, userID, sessionToken); err != nil {
+		return UserVote{}, err
+	}
+
 	vote, err := s.voteRepo.GetByUserAndRound(ctx, strings.TrimSpace(userID), strings.TrimSpace(roundID))
 	if err != nil {
 		return UserVote{}, err

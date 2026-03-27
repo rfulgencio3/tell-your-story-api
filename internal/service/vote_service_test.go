@@ -16,9 +16,10 @@ func TestSubmitVoteRejectsDuplicateVotes(t *testing.T) {
 	fixture := newGameplayFixture(t)
 
 	firstVote, err := fixture.voteService.SubmitVote(context.Background(), SubmitVoteInput{
-		RoundID: fixture.roundID,
-		UserID:  fixture.guestID,
-		StoryID: fixture.hostStoryID,
+		RoundID:      fixture.roundID,
+		UserID:       fixture.guestID,
+		SessionToken: fixture.guestSessionToken,
+		StoryID:      fixture.hostStoryID,
 	})
 	if err != nil {
 		t.Fatalf("SubmitVote() unexpected error = %v", err)
@@ -29,9 +30,10 @@ func TestSubmitVoteRejectsDuplicateVotes(t *testing.T) {
 	}
 
 	if _, err := fixture.voteService.SubmitVote(context.Background(), SubmitVoteInput{
-		RoundID: fixture.roundID,
-		UserID:  fixture.guestID,
-		StoryID: fixture.hostStoryID,
+		RoundID:      fixture.roundID,
+		UserID:       fixture.guestID,
+		SessionToken: fixture.guestSessionToken,
+		StoryID:      fixture.hostStoryID,
 	}); err != domain.ErrVoteAlreadyExists {
 		t.Fatalf("SubmitVote() error = %v, want %v", err, domain.ErrVoteAlreadyExists)
 	}
@@ -43,9 +45,10 @@ func TestSubmitVoteRejectsSelfVote(t *testing.T) {
 	fixture := newGameplayFixture(t)
 
 	if _, err := fixture.voteService.SubmitVote(context.Background(), SubmitVoteInput{
-		RoundID: fixture.roundID,
-		UserID:  fixture.hostID,
-		StoryID: fixture.hostStoryID,
+		RoundID:      fixture.roundID,
+		UserID:       fixture.hostID,
+		SessionToken: fixture.hostSessionToken,
+		StoryID:      fixture.hostStoryID,
 	}); err != domain.ErrSelfVote {
 		t.Fatalf("SubmitVote() error = %v, want %v", err, domain.ErrSelfVote)
 	}
@@ -57,23 +60,41 @@ func TestSubmitStoryRejectsWhenRoundNotWriting(t *testing.T) {
 	fixture := newGameplayFixture(t)
 
 	if _, err := fixture.storyService.SubmitStory(context.Background(), SubmitStoryInput{
-		RoundID: fixture.roundID,
-		UserID:  fixture.guestID,
-		Title:   "Late story",
-		Body:    "This should fail",
+		RoundID:      fixture.roundID,
+		UserID:       fixture.guestID,
+		SessionToken: fixture.guestSessionToken,
+		Title:        "Late story",
+		Body:         "This should fail",
 	}); err != domain.ErrInvalidRoundState {
 		t.Fatalf("SubmitStory() error = %v, want %v", err, domain.ErrInvalidRoundState)
 	}
 }
 
+func TestSubmitVoteRejectsInvalidSessionToken(t *testing.T) {
+	t.Parallel()
+
+	fixture := newGameplayFixture(t)
+
+	if _, err := fixture.voteService.SubmitVote(context.Background(), SubmitVoteInput{
+		RoundID:      fixture.roundID,
+		UserID:       fixture.guestID,
+		SessionToken: "invalid-token",
+		StoryID:      fixture.hostStoryID,
+	}); err != domain.ErrInvalidSessionToken {
+		t.Fatalf("SubmitVote() error = %v, want %v", err, domain.ErrInvalidSessionToken)
+	}
+}
+
 type gameplayFixture struct {
-	roomService  *RoomService
-	storyService *StoryService
-	voteService  *VoteService
-	hostID       string
-	guestID      string
-	roundID      string
-	hostStoryID  string
+	roomService       *RoomService
+	storyService      *StoryService
+	voteService       *VoteService
+	hostID            string
+	hostSessionToken  string
+	guestID           string
+	guestSessionToken string
+	roundID           string
+	hostStoryID       string
 }
 
 func newGameplayFixture(t *testing.T) gameplayFixture {
@@ -110,52 +131,60 @@ func newGameplayFixture(t *testing.T) gameplayFixture {
 	}
 
 	started, err := roomService.StartGame(context.Background(), state.Room.Code, RoomActionInput{
-		UserID: state.Room.HostID,
+		UserID:       state.Room.HostID,
+		SessionToken: state.Users[0].SessionToken,
 	})
 	if err != nil {
 		t.Fatalf("StartGame() error = %v", err)
 	}
 
 	var guestID string
+	var guestSessionToken string
 	for _, user := range joined.Users {
 		if !user.IsHost {
 			guestID = user.ID
+			guestSessionToken = user.SessionToken
 			break
 		}
 	}
 
 	hostStory, err := storyService.SubmitStory(context.Background(), SubmitStoryInput{
-		RoundID: started.CurrentRound.ID,
-		UserID:  state.Room.HostID,
-		Title:   "Host story",
-		Body:    "A fun fact",
+		RoundID:      started.CurrentRound.ID,
+		UserID:       state.Room.HostID,
+		SessionToken: state.Users[0].SessionToken,
+		Title:        "Host story",
+		Body:         "A fun fact",
 	})
 	if err != nil {
 		t.Fatalf("SubmitStory(host) error = %v", err)
 	}
 
 	if _, err := storyService.SubmitStory(context.Background(), SubmitStoryInput{
-		RoundID: started.CurrentRound.ID,
-		UserID:  guestID,
-		Title:   "Guest story",
-		Body:    "Another fun fact",
+		RoundID:      started.CurrentRound.ID,
+		UserID:       guestID,
+		SessionToken: guestSessionToken,
+		Title:        "Guest story",
+		Body:         "Another fun fact",
 	}); err != nil {
 		t.Fatalf("SubmitStory(guest) error = %v", err)
 	}
 
 	if _, err := roomService.NextRound(context.Background(), state.Room.Code, RoomActionInput{
-		UserID: state.Room.HostID,
+		UserID:       state.Room.HostID,
+		SessionToken: state.Users[0].SessionToken,
 	}); err != nil {
 		t.Fatalf("NextRound() error = %v", err)
 	}
 
 	return gameplayFixture{
-		roomService:  roomService,
-		storyService: storyService,
-		voteService:  voteService,
-		hostID:       state.Room.HostID,
-		guestID:      guestID,
-		roundID:      started.CurrentRound.ID,
-		hostStoryID:  hostStory.ID,
+		roomService:       roomService,
+		storyService:      storyService,
+		voteService:       voteService,
+		hostID:            state.Room.HostID,
+		hostSessionToken:  state.Users[0].SessionToken,
+		guestID:           guestID,
+		guestSessionToken: guestSessionToken,
+		roundID:           started.CurrentRound.ID,
+		hostStoryID:       hostStory.ID,
 	}
 }

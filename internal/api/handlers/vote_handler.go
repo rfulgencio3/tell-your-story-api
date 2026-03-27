@@ -37,6 +37,10 @@ func (h *VoteHandler) SubmitVote(w http.ResponseWriter, r *http.Request) {
 		respond.Error(w, http.StatusBadRequest, "invalid_json", "request body must be valid JSON")
 		return
 	}
+	if strings.TrimSpace(input.UserID) == "" || strings.TrimSpace(input.SessionToken) == "" {
+		respond.Error(w, http.StatusBadRequest, "bad_request", "user_id and session_token are required")
+		return
+	}
 
 	vote, err := h.voteService.SubmitVote(r.Context(), input)
 	if err != nil {
@@ -91,7 +95,13 @@ func (h *VoteHandler) HandleUserRoutes(w http.ResponseWriter, r *http.Request) b
 		return false
 	}
 
-	userVote, err := h.voteService.GetUserVote(r.Context(), parts[0], parts[2])
+	sessionToken := strings.TrimSpace(r.URL.Query().Get("session_token"))
+	if sessionToken == "" {
+		respond.Error(w, http.StatusBadRequest, "bad_request", "session_token is required")
+		return true
+	}
+
+	userVote, err := h.voteService.GetUserVote(r.Context(), parts[0], parts[2], sessionToken)
 	if err != nil {
 		h.writeVoteError(w, err)
 		return true
@@ -107,6 +117,8 @@ func (h *VoteHandler) writeVoteError(w http.ResponseWriter, err error) {
 		respond.Error(w, http.StatusNotFound, "round_not_found", err.Error())
 	case errors.Is(err, domain.ErrUserNotFound):
 		respond.Error(w, http.StatusNotFound, "user_not_found", err.Error())
+	case errors.Is(err, domain.ErrInvalidSessionToken):
+		respond.Error(w, http.StatusUnauthorized, "invalid_session", err.Error())
 	case errors.Is(err, domain.ErrRoomExpired):
 		respond.Error(w, http.StatusGone, "room_expired", err.Error())
 	case errors.Is(err, domain.ErrStoryNotFound):

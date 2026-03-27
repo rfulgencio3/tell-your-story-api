@@ -40,6 +40,10 @@ func TestCreateRoom(t *testing.T) {
 	if !state.Users[0].IsHost {
 		t.Fatal("created user should be the host")
 	}
+
+	if state.Users[0].SessionToken == "" {
+		t.Fatal("created host should receive a session token")
+	}
 }
 
 func TestJoinRoomRejectsWhenFull(t *testing.T) {
@@ -92,7 +96,8 @@ func TestStartGameCreatesFirstRound(t *testing.T) {
 	}
 
 	started, err := svc.StartGame(context.Background(), state.Room.Code, RoomActionInput{
-		UserID: state.Room.HostID,
+		UserID:       state.Room.HostID,
+		SessionToken: state.Users[0].SessionToken,
 	})
 	if err != nil {
 		t.Fatalf("StartGame() error = %v", err)
@@ -130,14 +135,16 @@ func TestNextRoundFinishesRoomOnLastRound(t *testing.T) {
 	}
 
 	started, err := svc.StartGame(context.Background(), state.Room.Code, RoomActionInput{
-		UserID: state.Room.HostID,
+		UserID:       state.Room.HostID,
+		SessionToken: state.Users[0].SessionToken,
 	})
 	if err != nil {
 		t.Fatalf("StartGame() error = %v", err)
 	}
 
 	voting, err := svc.NextRound(context.Background(), state.Room.Code, RoomActionInput{
-		UserID: state.Room.HostID,
+		UserID:       state.Room.HostID,
+		SessionToken: state.Users[0].SessionToken,
 	})
 	if err != nil {
 		t.Fatalf("NextRound() error = %v", err)
@@ -148,7 +155,8 @@ func TestNextRoundFinishesRoomOnLastRound(t *testing.T) {
 	}
 
 	revealed, err := svc.NextRound(context.Background(), state.Room.Code, RoomActionInput{
-		UserID: state.Room.HostID,
+		UserID:       state.Room.HostID,
+		SessionToken: state.Users[0].SessionToken,
 	})
 	if err != nil {
 		t.Fatalf("NextRound() error = %v", err)
@@ -159,7 +167,8 @@ func TestNextRoundFinishesRoomOnLastRound(t *testing.T) {
 	}
 
 	finished, err := svc.NextRound(context.Background(), state.Room.Code, RoomActionInput{
-		UserID: state.Room.HostID,
+		UserID:       state.Room.HostID,
+		SessionToken: state.Users[0].SessionToken,
 	})
 	if err != nil {
 		t.Fatalf("NextRound() error = %v", err)
@@ -193,7 +202,8 @@ func TestNextRoundStartsNewRoundAfterReveal(t *testing.T) {
 	}
 
 	started, err := svc.StartGame(context.Background(), state.Room.Code, RoomActionInput{
-		UserID: state.Room.HostID,
+		UserID:       state.Room.HostID,
+		SessionToken: state.Users[0].SessionToken,
 	})
 	if err != nil {
 		t.Fatalf("StartGame() error = %v", err)
@@ -201,14 +211,16 @@ func TestNextRoundStartsNewRoundAfterReveal(t *testing.T) {
 
 	for i := 0; i < 2; i++ {
 		if _, err := svc.NextRound(context.Background(), state.Room.Code, RoomActionInput{
-			UserID: state.Room.HostID,
+			UserID:       state.Room.HostID,
+			SessionToken: state.Users[0].SessionToken,
 		}); err != nil {
 			t.Fatalf("NextRound() error = %v", err)
 		}
 	}
 
 	next, err := svc.NextRound(context.Background(), state.Room.Code, RoomActionInput{
-		UserID: state.Room.HostID,
+		UserID:       state.Room.HostID,
+		SessionToken: state.Users[0].SessionToken,
 	})
 	if err != nil {
 		t.Fatalf("NextRound() error = %v", err)
@@ -228,6 +240,32 @@ func TestNextRoundStartsNewRoundAfterReveal(t *testing.T) {
 
 	if next.CurrentRound.Status != domain.RoundStatusWriting {
 		t.Fatalf("round status = %q, want %q", next.CurrentRound.Status, domain.RoundStatusWriting)
+	}
+}
+
+func TestStartGameRejectsInvalidSessionToken(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestRoomService(config.GameConfig{
+		RoomCodeLength:    6,
+		RoomExpiration:    2 * time.Hour,
+		MaxPlayersPerRoom: 10,
+	})
+
+	state, err := svc.CreateRoom(context.Background(), CreateRoomInput{
+		HostNickname: "Host",
+		MaxRounds:    3,
+		TimePerRound: 120,
+	})
+	if err != nil {
+		t.Fatalf("CreateRoom() error = %v", err)
+	}
+
+	if _, err := svc.StartGame(context.Background(), state.Room.Code, RoomActionInput{
+		UserID:       state.Room.HostID,
+		SessionToken: "invalid-token",
+	}); err != domain.ErrInvalidSessionToken {
+		t.Fatalf("StartGame() error = %v, want %v", err, domain.ErrInvalidSessionToken)
 	}
 }
 

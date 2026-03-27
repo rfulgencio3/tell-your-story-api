@@ -17,6 +17,8 @@ var (
 	ErrInvalidRoundState = errors.New("invalid round state")
 	// ErrUserNotFound indicates the requested user does not exist.
 	ErrUserNotFound = errors.New("user not found")
+	// ErrInvalidSessionToken indicates the provided session token is invalid.
+	ErrInvalidSessionToken = errors.New("invalid session token")
 	// ErrNotRoomHost indicates only the room host can perform the operation.
 	ErrNotRoomHost = errors.New("user is not the room host")
 	// ErrRoundNotFound indicates the requested round does not exist.

@@ -23,6 +23,7 @@ Backend em Go para o jogo de ice breaker "Tell Your Story".
 - revelacao da historia vencedora
 - documentacao Swagger em runtime
 - eventos realtime para presenca, estado de sala, progresso de historias e progresso de votos
+- autenticacao por `session_token` nas acoes mutaveis e no WebSocket
 
 ## Requisitos
 
@@ -102,7 +103,7 @@ docker-compose up -d --build
 - Health check: `http://localhost:8080/health`
 - Swagger UI: `http://localhost:8080/swagger/`
 - OpenAPI YAML: `http://localhost:8080/swagger/openapi.yaml`
-- WebSocket: `ws://localhost:8080/ws?room_code=SEU_CODIGO&user_id=SEU_USER_ID`
+- WebSocket: `ws://localhost:8080/ws?room_code=SEU_CODIGO&user_id=SEU_USER_ID&session_token=SEU_TOKEN`
 
 ## Comandos uteis
 
@@ -140,11 +141,17 @@ make swagger-url
 - `POST /api/votes`
 - `GET /api/rounds/{roundId}/votes`
 - `GET /api/rounds/{roundId}/top-story`
-- `GET /api/users/{userId}/rounds/{roundId}/vote`
+- `GET /api/users/{userId}/rounds/{roundId}/vote?session_token={token}`
+
+## Sessao
+
+- `POST /api/rooms` e `POST /api/rooms/{code}/join` retornam `session.user_id` e `session.session_token`
+- reuse esse `session_token` em `leave`, `start`, `pause`, `next-round`, `submit story`, `submit vote`, `get user vote` e no WebSocket
+- o `RoomState` continua publico, mas o token nao e exposto para outros jogadores
 
 ### Realtime
 
-- `GET /ws?room_code={code}&user_id={userId}` para upgrade WebSocket
+- `GET /ws?room_code={code}&user_id={userId}&session_token={token}` para upgrade WebSocket
 
 Mensagens aceitas do cliente:
 

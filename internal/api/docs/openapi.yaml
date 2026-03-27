@@ -18,7 +18,7 @@ paths:
       summary: WebSocket room stream
       description: |
         Upgrades the connection to WebSocket and subscribes the client to a room.
-        Use the `room_code` and `user_id` query parameters.
+        Use the `room_code`, `user_id` and `session_token` query parameters.
         Supported client messages:
         - `ping`
         - `room.sync`
@@ -46,10 +46,17 @@ paths:
           required: true
           schema:
             type: string
+        - name: session_token
+          in: query
+          required: true
+          schema:
+            type: string
       responses:
         '101':
           description: Switching Protocols
         '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
           $ref: '#/components/responses/ErrorResponse'
         '403':
           $ref: '#/components/responses/ErrorResponse'
@@ -84,7 +91,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RoomStateResponse'
+                $ref: '#/components/schemas/AuthenticatedRoomStateResponse'
         '400':
           $ref: '#/components/responses/ErrorResponse'
   /api/rooms/{code}:
@@ -122,7 +129,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RoomStateResponse'
+                $ref: '#/components/schemas/AuthenticatedRoomStateResponse'
         '400':
           $ref: '#/components/responses/ErrorResponse'
         '404':
@@ -152,6 +159,8 @@ paths:
                 $ref: '#/components/schemas/RoomStateResponse'
         '400':
           $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
         '404':
           $ref: '#/components/responses/ErrorResponse'
   /api/rooms/{code}/start:
@@ -174,6 +183,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/RoomStateResponse'
         '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
           $ref: '#/components/responses/ErrorResponse'
         '403':
           $ref: '#/components/responses/ErrorResponse'
@@ -204,6 +215,8 @@ paths:
                 $ref: '#/components/schemas/RoomStateResponse'
         '400':
           $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
         '403':
           $ref: '#/components/responses/ErrorResponse'
         '404':
@@ -231,6 +244,8 @@ paths:
                 $ref: '#/components/schemas/RoomStateResponse'
         '400':
           $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
         '403':
           $ref: '#/components/responses/ErrorResponse'
         '404':
@@ -257,6 +272,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/StoryResponse'
         '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
           $ref: '#/components/responses/ErrorResponse'
         '404':
           $ref: '#/components/responses/ErrorResponse'
@@ -295,6 +312,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/VoteResponse'
         '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
           $ref: '#/components/responses/ErrorResponse'
         '404':
           $ref: '#/components/responses/ErrorResponse'
@@ -337,6 +356,11 @@ paths:
       parameters:
         - $ref: '#/components/parameters/UserID'
         - $ref: '#/components/parameters/RoundID'
+        - name: session_token
+          in: query
+          required: true
+          schema:
+            type: string
       responses:
         '200':
           description: User vote fetched
@@ -344,6 +368,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UserVoteResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
         '404':
           $ref: '#/components/responses/ErrorResponse'
 components:
@@ -434,7 +462,9 @@ components:
       properties:
         user_id:
           type: string
-      required: [user_id]
+        session_token:
+          type: string
+      required: [user_id, session_token]
     SubmitStoryInput:
       type: object
       properties:
@@ -442,13 +472,15 @@ components:
           type: string
         user_id:
           type: string
+        session_token:
+          type: string
         title:
           type: string
           maxLength: 100
         body:
           type: string
           maxLength: 500
-      required: [round_id, user_id, title, body]
+      required: [round_id, user_id, session_token, title, body]
     SubmitVoteInput:
       type: object
       properties:
@@ -456,9 +488,17 @@ components:
           type: string
         user_id:
           type: string
+        session_token:
+          type: string
         story_id:
           type: string
-      required: [round_id, user_id, story_id]
+      required: [round_id, user_id, session_token, story_id]
+    AuthSession:
+      type: object
+      properties:
+        user_id: { type: string }
+        session_token: { type: string }
+      required: [user_id, session_token]
     Room:
       type: object
       properties:
@@ -558,6 +598,20 @@ components:
           properties:
             data:
               $ref: '#/components/schemas/RoomState'
+    AuthenticatedRoomState:
+      allOf:
+        - $ref: '#/components/schemas/RoomState'
+        - type: object
+          properties:
+            session:
+              $ref: '#/components/schemas/AuthSession'
+    AuthenticatedRoomStateResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/AuthenticatedRoomState'
     StoryResponse:
       allOf:
         - $ref: '#/components/schemas/SuccessEnvelope'

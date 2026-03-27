@@ -45,7 +45,7 @@ func (h *RoomHandler) CreateRoom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respond.JSON(w, http.StatusCreated, "room created successfully", state)
+	respond.JSON(w, http.StatusCreated, "room created successfully", authenticatedRoomState(state, hostUserFromState(state)))
 	h.notifyRoomState(r.Context(), state.Room.Code)
 }
 
@@ -110,7 +110,7 @@ func (h *RoomHandler) joinRoom(w http.ResponseWriter, r *http.Request, code stri
 		return
 	}
 
-	respond.JSON(w, http.StatusOK, "user joined room successfully", state)
+	respond.JSON(w, http.StatusOK, "user joined room successfully", authenticatedRoomState(state, joinedUserFromState(state)))
 	h.notifyRoomState(r.Context(), state.Room.Code)
 }
 
@@ -188,6 +188,8 @@ func (h *RoomHandler) writeRoomError(w http.ResponseWriter, err error) {
 		respond.Error(w, http.StatusNotFound, "room_not_found", err.Error())
 	case errors.Is(err, domain.ErrUserNotFound):
 		respond.Error(w, http.StatusNotFound, "user_not_found", err.Error())
+	case errors.Is(err, domain.ErrInvalidSessionToken):
+		respond.Error(w, http.StatusUnauthorized, "invalid_session", err.Error())
 	case errors.Is(err, domain.ErrRoundNotFound):
 		respond.Error(w, http.StatusNotFound, "round_not_found", err.Error())
 	case errors.Is(err, domain.ErrRoomExpired):
@@ -214,8 +216,39 @@ func decodeActionInput(r *http.Request) (service.RoomActionInput, error) {
 	if strings.TrimSpace(input.UserID) == "" {
 		return service.RoomActionInput{}, errors.New("user_id is required")
 	}
+	if strings.TrimSpace(input.SessionToken) == "" {
+		return service.RoomActionInput{}, errors.New("session_token is required")
+	}
 
 	return input, nil
+}
+
+func authenticatedRoomState(state service.RoomState, user domain.User) service.AuthenticatedRoomState {
+	return service.AuthenticatedRoomState{
+		RoomState: state,
+		Session: service.AuthSession{
+			UserID:       user.ID,
+			SessionToken: user.SessionToken,
+		},
+	}
+}
+
+func hostUserFromState(state service.RoomState) domain.User {
+	for _, user := range state.Users {
+		if user.ID == state.Room.HostID {
+			return user
+		}
+	}
+
+	return domain.User{}
+}
+
+func joinedUserFromState(state service.RoomState) domain.User {
+	if len(state.Users) == 0 {
+		return domain.User{}
+	}
+
+	return state.Users[len(state.Users)-1]
 }
 
 func (h *RoomHandler) notifyRoomState(ctx context.Context, roomCode string) {

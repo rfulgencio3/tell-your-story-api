@@ -32,7 +32,8 @@ type JoinRoomInput struct {
 
 // RoomActionInput carries the acting user id.
 type RoomActionInput struct {
-	UserID string `json:"user_id"`
+	UserID       string `json:"user_id"`
+	SessionToken string `json:"session_token"`
 }
 
 // RoomState is the API-facing room snapshot.
@@ -112,6 +113,10 @@ func (s *RoomService) CreateRoom(ctx context.Context, input CreateRoomInput) (Ro
 		IsHost:    true,
 		CreatedAt: now,
 	}
+	host.SessionToken, err = utils.GenerateSessionToken()
+	if err != nil {
+		return RoomState{}, fmt.Errorf("generate host session token: %w", err)
+	}
 
 	if err := s.roomRepo.Create(ctx, room); err != nil {
 		return RoomState{}, fmt.Errorf("create room: %w", err)
@@ -187,6 +192,10 @@ func (s *RoomService) JoinRoom(ctx context.Context, code string, input JoinRoomI
 		IsHost:    false,
 		CreatedAt: time.Now().UTC(),
 	}
+	user.SessionToken, err = utils.GenerateSessionToken()
+	if err != nil {
+		return RoomState{}, fmt.Errorf("generate user session token: %w", err)
+	}
 
 	if err := s.userRepo.Create(ctx, user); err != nil {
 		return RoomState{}, fmt.Errorf("create user: %w", err)
@@ -202,7 +211,7 @@ func (s *RoomService) LeaveRoom(ctx context.Context, code string, input RoomActi
 		return RoomState{}, err
 	}
 
-	user, err := s.userRepo.GetByID(ctx, strings.TrimSpace(input.UserID))
+	user, err := AuthenticateUserSession(ctx, s.userRepo, input.UserID, input.SessionToken)
 	if err != nil {
 		return RoomState{}, err
 	}
@@ -237,7 +246,7 @@ func (s *RoomService) StartGame(ctx context.Context, code string, input RoomActi
 		return RoomState{}, err
 	}
 
-	if err := s.ensureRoomHost(ctx, room, strings.TrimSpace(input.UserID)); err != nil {
+	if err := s.ensureRoomHost(ctx, room, strings.TrimSpace(input.UserID), strings.TrimSpace(input.SessionToken)); err != nil {
 		return RoomState{}, err
 	}
 
@@ -282,7 +291,7 @@ func (s *RoomService) PauseRound(ctx context.Context, code string, input RoomAct
 		return RoomState{}, err
 	}
 
-	if err := s.ensureRoomHost(ctx, room, strings.TrimSpace(input.UserID)); err != nil {
+	if err := s.ensureRoomHost(ctx, room, strings.TrimSpace(input.UserID), strings.TrimSpace(input.SessionToken)); err != nil {
 		return RoomState{}, err
 	}
 
@@ -334,7 +343,7 @@ func (s *RoomService) NextRound(ctx context.Context, code string, input RoomActi
 		return RoomState{}, err
 	}
 
-	if err := s.ensureRoomHost(ctx, room, strings.TrimSpace(input.UserID)); err != nil {
+	if err := s.ensureRoomHost(ctx, room, strings.TrimSpace(input.UserID), strings.TrimSpace(input.SessionToken)); err != nil {
 		return RoomState{}, err
 	}
 
@@ -440,8 +449,8 @@ func (s *RoomService) generateUniqueRoomCode(ctx context.Context) (string, error
 	return "", fmt.Errorf("unable to generate a unique room code after %d attempts", maxRoomCodeGenerationAttempts)
 }
 
-func (s *RoomService) ensureRoomHost(ctx context.Context, room domain.Room, userID string) error {
-	user, err := s.userRepo.GetByID(ctx, userID)
+func (s *RoomService) ensureRoomHost(ctx context.Context, room domain.Room, userID string, sessionToken string) error {
+	user, err := AuthenticateUserSession(ctx, s.userRepo, userID, sessionToken)
 	if err != nil {
 		return err
 	}

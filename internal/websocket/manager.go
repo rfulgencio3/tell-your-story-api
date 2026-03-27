@@ -2,6 +2,7 @@ package websocket
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -123,12 +124,17 @@ func (m *Manager) Start(ctx context.Context) {
 func (m *Manager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	roomCode := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("room_code")))
 	userID := strings.TrimSpace(r.URL.Query().Get("user_id"))
+	sessionToken := strings.TrimSpace(r.URL.Query().Get("session_token"))
 	if roomCode == "" {
 		http.Error(w, "room_code is required", http.StatusBadRequest)
 		return
 	}
 	if userID == "" {
 		http.Error(w, "user_id is required", http.StatusBadRequest)
+		return
+	}
+	if sessionToken == "" {
+		http.Error(w, "session_token is required", http.StatusBadRequest)
 		return
 	}
 
@@ -139,7 +145,11 @@ func (m *Manager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	user, err := m.userRepo.GetByID(r.Context(), userID)
-	if err != nil || user.RoomID != state.Room.ID {
+	if err != nil || subtle.ConstantTimeCompare([]byte(user.SessionToken), []byte(sessionToken)) != 1 {
+		http.Error(w, domain.ErrInvalidSessionToken.Error(), http.StatusUnauthorized)
+		return
+	}
+	if user.RoomID != state.Room.ID {
 		http.Error(w, "user is not part of the room", http.StatusForbidden)
 		return
 	}

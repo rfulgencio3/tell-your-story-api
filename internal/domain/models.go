@@ -36,12 +36,13 @@ type Room struct {
 
 // User represents a player in a room.
 type User struct {
-	ID        string    `json:"id" gorm:"primaryKey;type:varchar(64)"`
-	RoomID    string    `json:"room_id" gorm:"type:varchar(64);not null;index"`
-	Nickname  string    `json:"nickname" gorm:"size:50;not null"`
-	AvatarURL string    `json:"avatar_url" gorm:"size:255"`
-	IsHost    bool      `json:"is_host" gorm:"not null;default:false"`
-	CreatedAt time.Time `json:"created_at" gorm:"not null;index"`
+	ID           string    `json:"id" gorm:"primaryKey;type:varchar(64)"`
+	RoomID       string    `json:"room_id" gorm:"type:varchar(64);not null;index"`
+	Nickname     string    `json:"nickname" gorm:"size:50;not null"`
+	AvatarURL    string    `json:"avatar_url" gorm:"size:255"`
+	SessionToken string    `json:"-" gorm:"size:128;not null;uniqueIndex"`
+	IsHost       bool      `json:"is_host" gorm:"not null;default:false"`
+	CreatedAt    time.Time `json:"created_at" gorm:"not null;index"`
 }
 
 // Round represents a game round.
