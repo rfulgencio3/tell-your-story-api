@@ -37,7 +37,17 @@ func main() {
 
 	roomRepo, userRepo, roundRepo, storyRepo, voteRepo, db, err := buildRepositories(context.Background(), cfg, logger)
 	if err != nil {
-		logger.Error("failed to initialize storage", "driver", cfg.Storage.Driver, "err", err)
+		logger.Error(
+			"failed to initialize storage",
+			"driver", cfg.Storage.Driver,
+			"database_url_set", cfg.Database.URL != "",
+			"host", cfg.Database.Host,
+			"port", cfg.Database.Port,
+			"database", cfg.Database.Name,
+			"sslmode", cfg.Database.SSLMode,
+			"err", err,
+		)
+		fmt.Fprintf(os.Stderr, "failed to initialize storage: %v\n", err)
 		os.Exit(1)
 	}
 

@@ -15,11 +15,7 @@ const (
 	defaultRoomCodeLength      = 6
 	defaultRoomExpirationHours = 2
 	defaultMaxPlayersPerRoom   = 10
-	defaultDBHost              = "localhost"
 	defaultDBPort              = 5432
-	defaultDBUser              = "postgres"
-	defaultDBPassword          = "postgres"
-	defaultDBName              = "tell_your_story"
 	defaultDBSSLMode           = "disable"
 )
 
@@ -45,6 +41,7 @@ type StorageConfig struct {
 
 // DatabaseConfig contains PostgreSQL connection settings.
 type DatabaseConfig struct {
+	URL      string
 	Host     string
 	Port     int
 	User     string
@@ -67,6 +64,7 @@ type CORSConfig struct {
 
 // Load reads environment variables and returns a validated config.
 func Load() (Config, error) {
+	databaseURL := getEnv("DATABASE_URL", "")
 	cfg := Config{
 		Server: ServerConfig{
 			Port: getEnv("PORT", defaultPort),
@@ -76,11 +74,12 @@ func Load() (Config, error) {
 			Driver: strings.ToLower(getEnv("STORAGE_DRIVER", defaultStorageDriver)),
 		},
 		Database: DatabaseConfig{
-			Host:     getEnv("DB_HOST", defaultDBHost),
-			Port:     getEnvInt("DB_PORT", defaultDBPort),
-			User:     getEnv("DB_USER", defaultDBUser),
-			Password: getEnv("DB_PASSWORD", defaultDBPassword),
-			Name:     getEnv("DB_NAME", defaultDBName),
+			URL:      databaseURL,
+			Host:     getEnv("DB_HOST", getEnv("PGHOST", "")),
+			Port:     getEnvInt("DB_PORT", getEnvInt("PGPORT", defaultDBPort)),
+			User:     getEnv("DB_USER", getEnv("PGUSER", "")),
+			Password: getEnv("DB_PASSWORD", getEnv("PGPASSWORD", "")),
+			Name:     getEnv("DB_NAME", getEnv("PGDATABASE", "")),
 			SSLMode:  getEnv("DB_SSLMODE", defaultDBSSLMode),
 		},
 		Game: GameConfig{
@@ -107,6 +106,12 @@ func Load() (Config, error) {
 
 	if cfg.Storage.Driver != "memory" && cfg.Storage.Driver != "postgres" {
 		return Config{}, fmt.Errorf("STORAGE_DRIVER must be one of: memory, postgres")
+	}
+
+	if cfg.Storage.Driver == "postgres" && cfg.Database.URL == "" {
+		if cfg.Database.Host == "" || cfg.Database.User == "" || cfg.Database.Password == "" || cfg.Database.Name == "" {
+			return Config{}, fmt.Errorf("postgres storage requires DATABASE_URL or DB_HOST/DB_USER/DB_PASSWORD/DB_NAME (PG* aliases are also supported)")
+		}
 	}
 
 	if cfg.Database.Port <= 0 {
