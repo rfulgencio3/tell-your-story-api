@@ -11,7 +11,10 @@ import (
 	"github.com/tell-your-story/backend/internal/domain"
 )
 
-const roomCodeAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+const (
+	roomCodeLetters = "ABCDEFGHJKLMNPQRSTUVWXYZ"
+	roomCodeDigits  = "23456789"
+)
 
 // GenerateID returns a random identifier suitable for in-memory entities.
 func GenerateID() (string, error) {
@@ -35,19 +38,41 @@ func GenerateSessionToken() (string, error) {
 
 // GenerateRoomCode returns a random, user-friendly room code.
 func GenerateRoomCode(length int) (string, error) {
-	buffer := make([]byte, length)
+	lettersCount, digitsCount := roomCodeParts(length)
+	buffer := make([]byte, lettersCount+digitsCount)
 	if _, err := rand.Read(buffer); err != nil {
 		return "", fmt.Errorf("generate room code: %w", err)
 	}
 
 	var builder strings.Builder
-	builder.Grow(length)
+	builder.Grow(len(buffer))
 
-	for _, value := range buffer {
-		builder.WriteByte(roomCodeAlphabet[int(value)%len(roomCodeAlphabet)])
+	for index, value := range buffer {
+		if index < lettersCount {
+			builder.WriteByte(roomCodeLetters[int(value)%len(roomCodeLetters)])
+			continue
+		}
+
+		builder.WriteByte(roomCodeDigits[int(value)%len(roomCodeDigits)])
 	}
 
 	return builder.String(), nil
+}
+
+func roomCodeParts(length int) (int, int) {
+	if length <= 0 {
+		return 4, 2
+	}
+
+	if length <= 2 {
+		return length - 1, 1
+	}
+
+	if length == 6 {
+		return 4, 2
+	}
+
+	return length - 2, 2
 }
 
 // ShuffleStories returns a shuffled copy of the provided stories.
