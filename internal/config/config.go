@@ -117,7 +117,7 @@ func Load() (Config, error) {
 }
 
 func getEnv(key, fallback string) string {
-	value := strings.TrimSpace(os.Getenv(key))
+	value := normalizeEnvValue(os.Getenv(key))
 	if value == "" {
 		return fallback
 	}
@@ -126,7 +126,7 @@ func getEnv(key, fallback string) string {
 }
 
 func getEnvInt(key string, fallback int) int {
-	raw := strings.TrimSpace(os.Getenv(key))
+	raw := normalizeEnvValue(os.Getenv(key))
 	if raw == "" {
 		return fallback
 	}
@@ -140,14 +140,15 @@ func getEnvInt(key string, fallback int) int {
 }
 
 func splitCSV(raw string) []string {
-	if strings.TrimSpace(raw) == "" {
+	raw = normalizeEnvValue(raw)
+	if raw == "" {
 		return []string{"*"}
 	}
 
 	parts := strings.Split(raw, ",")
 	origins := make([]string, 0, len(parts))
 	for _, part := range parts {
-		trimmed := strings.TrimSpace(part)
+		trimmed := normalizeEnvValue(part)
 		if trimmed != "" {
 			origins = append(origins, trimmed)
 		}
@@ -158,4 +159,15 @@ func splitCSV(raw string) []string {
 	}
 
 	return origins
+}
+
+func normalizeEnvValue(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if len(trimmed) >= 2 {
+		if (trimmed[0] == '"' && trimmed[len(trimmed)-1] == '"') || (trimmed[0] == '\'' && trimmed[len(trimmed)-1] == '\'') {
+			trimmed = trimmed[1 : len(trimmed)-1]
+		}
+	}
+
+	return strings.TrimSpace(trimmed)
 }
