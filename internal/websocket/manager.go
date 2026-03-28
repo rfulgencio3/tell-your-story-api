@@ -126,39 +126,47 @@ func (m *Manager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	userID := strings.TrimSpace(r.URL.Query().Get("user_id"))
 	sessionToken := strings.TrimSpace(r.URL.Query().Get("session_token"))
 	if roomCode == "" {
+		m.logger.Warn("websocket rejected", "reason", "missing_room_code", "origin", r.Header.Get("Origin"))
 		http.Error(w, "room_code is required", http.StatusBadRequest)
 		return
 	}
 	if userID == "" {
+		m.logger.Warn("websocket rejected", "reason", "missing_user_id", "room_code", roomCode, "origin", r.Header.Get("Origin"))
 		http.Error(w, "user_id is required", http.StatusBadRequest)
 		return
 	}
 	if sessionToken == "" {
+		m.logger.Warn("websocket rejected", "reason", "missing_session_token", "room_code", roomCode, "user_id", userID, "origin", r.Header.Get("Origin"))
 		http.Error(w, "session_token is required", http.StatusBadRequest)
 		return
 	}
 
 	state, err := m.roomService.GetRoomState(r.Context(), roomCode)
 	if err != nil {
+		m.logger.Warn("websocket rejected", "reason", "room_state_unavailable", "room_code", roomCode, "user_id", userID, "origin", r.Header.Get("Origin"), "err", err)
 		http.Error(w, err.Error(), httpStatusFromDomainError(err))
 		return
 	}
 
 	user, err := m.userRepo.GetByID(r.Context(), userID)
 	if err != nil || subtle.ConstantTimeCompare([]byte(user.SessionToken), []byte(sessionToken)) != 1 {
+		m.logger.Warn("websocket rejected", "reason", "invalid_session", "room_code", roomCode, "user_id", userID, "origin", r.Header.Get("Origin"), "user_lookup_error", err != nil)
 		http.Error(w, domain.ErrInvalidSessionToken.Error(), http.StatusUnauthorized)
 		return
 	}
 	if user.RoomID != state.Room.ID {
+		m.logger.Warn("websocket rejected", "reason", "user_not_in_room", "room_code", roomCode, "user_id", userID, "origin", r.Header.Get("Origin"), "user_room_id", user.RoomID, "state_room_id", state.Room.ID)
 		http.Error(w, "user is not part of the room", http.StatusForbidden)
 		return
 	}
 
 	conn, err := m.upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		m.logger.Error("failed to upgrade websocket connection", "err", err)
+		m.logger.Error("failed to upgrade websocket connection", "room_code", roomCode, "user_id", userID, "origin", r.Header.Get("Origin"), "err", err)
 		return
 	}
+
+	m.logger.Info("websocket connected", "room_code", roomCode, "user_id", userID, "origin", r.Header.Get("Origin"))
 
 	client := &client{
 		conn:     conn,
