@@ -8,6 +8,7 @@ servers:
 tags:
   - name: Health
   - name: Rooms
+  - name: Three Lies
   - name: Stories
   - name: Votes
   - name: Realtime
@@ -279,6 +280,37 @@ paths:
           $ref: '#/components/responses/ErrorResponse'
         '409':
           $ref: '#/components/responses/ErrorResponse'
+  /api/three-lies/truth-sets:
+    post:
+      tags: [Three Lies]
+      summary: Submit or update a truth set for the current writing phase
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitTruthSetInput'
+      responses:
+        '200':
+          description: Truth set updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TruthSetResponse'
+        '201':
+          description: Truth set created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TruthSetResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
   /api/rounds/{roundId}/stories:
     get:
       tags: [Stories]
@@ -440,6 +472,9 @@ components:
           type: string
         host_avatar_url:
           type: string
+        game_type:
+          type: string
+          enum: [tell-your-story, three-lies-one-truth]
         max_rounds:
           type: integer
           minimum: 1
@@ -493,6 +528,27 @@ components:
         story_id:
           type: string
       required: [round_id, user_id, session_token, story_id]
+    SubmitTruthSetInput:
+      type: object
+      properties:
+        round_id:
+          type: string
+        user_id:
+          type: string
+        session_token:
+          type: string
+        statements:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items:
+            type: string
+            maxLength: 500
+        true_statement_index:
+          type: integer
+          minimum: 1
+          maximum: 4
+      required: [round_id, user_id, session_token, statements, true_statement_index]
     AuthSession:
       type: object
       properties:
@@ -505,6 +561,7 @@ components:
         id: { type: string }
         code: { type: string }
         host_id: { type: string }
+        game_type: { type: string }
         max_rounds: { type: integer }
         time_per_round: { type: integer }
         status: { type: string }
@@ -548,6 +605,31 @@ components:
         user_id: { type: string }
         round_id: { type: string }
         created_at: { type: string, format: date-time }
+    TruthSetStatement:
+      type: object
+      properties:
+        id: { type: string }
+        truth_set_id: { type: string }
+        statement_index: { type: integer }
+        content: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    TruthSet:
+      type: object
+      properties:
+        id: { type: string }
+        room_id: { type: string }
+        round_id: { type: string }
+        author_user_id: { type: string }
+        presentation_order: { type: integer }
+        true_statement_index: { type: integer }
+        commentary_text: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        statements:
+          type: array
+          items:
+            $ref: '#/components/schemas/TruthSetStatement'
     RoomState:
       type: object
       properties:
@@ -635,6 +717,13 @@ components:
           properties:
             data:
               $ref: '#/components/schemas/Vote'
+    TruthSetResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/TruthSet'
     VoteSummariesResponse:
       allOf:
         - $ref: '#/components/schemas/SuccessEnvelope'

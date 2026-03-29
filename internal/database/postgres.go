@@ -49,9 +49,12 @@ func Connect(ctx context.Context, cfg config.DatabaseConfig) (*gorm.DB, error) {
 	}
 
 	if err := db.WithContext(ctx).AutoMigrate(
+		&domain.GameType{},
 		&domain.Room{},
 		&domain.User{},
 		&domain.Round{},
+		&domain.TruthSet{},
+		&domain.TruthSetStatement{},
 		&domain.Story{},
 		&domain.Vote{},
 	); err != nil {

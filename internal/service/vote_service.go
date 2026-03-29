@@ -81,6 +81,10 @@ func (s *VoteService) SubmitVote(ctx context.Context, input SubmitVoteInput) (do
 		return domain.Vote{}, err
 	}
 
+	if domain.IsThreeLiesOneTruthGameTypeID(room.GameTypeID) {
+		return domain.Vote{}, domain.ErrInvalidRoomState
+	}
+
 	if room.Status != domain.RoomStatusActive || round.Status != domain.RoundStatusVoting {
 		return domain.Vote{}, domain.ErrInvalidRoundState
 	}
@@ -141,6 +145,15 @@ func (s *VoteService) GetRoundVotes(ctx context.Context, roundID string) ([]Vote
 		return nil, err
 	}
 
+	room, roomErr := s.roomRepo.GetByID(ctx, round.RoomID)
+	if roomErr != nil {
+		return nil, roomErr
+	}
+
+	if domain.IsThreeLiesOneTruthGameTypeID(room.GameTypeID) {
+		return nil, domain.ErrInvalidRoomState
+	}
+
 	if round.Status == domain.RoundStatusWriting {
 		return nil, domain.ErrInvalidRoundState
 	}
@@ -179,7 +192,21 @@ func (s *VoteService) GetUserVote(ctx context.Context, userID, roundID, sessionT
 		return UserVote{}, err
 	}
 
-	vote, err := s.voteRepo.GetByUserAndRound(ctx, strings.TrimSpace(userID), strings.TrimSpace(roundID))
+	round, err := s.roundRepo.GetByID(ctx, strings.TrimSpace(roundID))
+	if err != nil {
+		return UserVote{}, err
+	}
+
+	room, err := s.roomRepo.GetByID(ctx, round.RoomID)
+	if err != nil {
+		return UserVote{}, err
+	}
+
+	if domain.IsThreeLiesOneTruthGameTypeID(room.GameTypeID) {
+		return UserVote{}, domain.ErrInvalidRoomState
+	}
+
+	vote, err := s.voteRepo.GetByUserAndRound(ctx, strings.TrimSpace(userID), round.ID)
 	if err != nil {
 		return UserVote{}, err
 	}
@@ -201,6 +228,10 @@ func (s *VoteService) GetTopStory(ctx context.Context, roundID string) (TopStory
 	room, round, err := s.lifecycle.SyncRound(ctx, round)
 	if err != nil {
 		return TopStoryResult{}, err
+	}
+
+	if domain.IsThreeLiesOneTruthGameTypeID(room.GameTypeID) {
+		return TopStoryResult{}, domain.ErrInvalidRoomState
 	}
 
 	if room.Status == domain.RoomStatusWaiting || round.Status != domain.RoundStatusRevealed {

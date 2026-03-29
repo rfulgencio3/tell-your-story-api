@@ -1,6 +1,20 @@
 package domain
 
-import "time"
+import (
+	"strings"
+	"time"
+)
+
+const (
+	// GameTypeIDTellYourStory is the stable catalog identifier for the default mode.
+	GameTypeIDTellYourStory = "00000000000000000000000000000001"
+	// GameTypeIDThreeLiesOneTruth is the stable catalog identifier for the three-lies mode.
+	GameTypeIDThreeLiesOneTruth = "00000000000000000000000000000002"
+	// GameTypeTellYourStory is the public slug for the default mode.
+	GameTypeTellYourStory = "tell-your-story"
+	// GameTypeThreeLiesOneTruth is the public slug for the alternative mode.
+	GameTypeThreeLiesOneTruth = "three-lies-one-truth"
+)
 
 // RoomStatus represents the lifecycle state of a room.
 type RoomStatus string
@@ -17,16 +31,34 @@ const (
 type RoundStatus string
 
 const (
-	RoundStatusWriting  RoundStatus = "writing"
-	RoundStatusVoting   RoundStatus = "voting"
-	RoundStatusRevealed RoundStatus = "revealed"
+	RoundStatusCountdown          RoundStatus = "countdown"
+	RoundStatusWriting            RoundStatus = "writing"
+	RoundStatusVoting             RoundStatus = "voting"
+	RoundStatusRevealed           RoundStatus = "revealed"
+	RoundStatusPresentationVoting RoundStatus = "presentation_voting"
+	RoundStatusReveal             RoundStatus = "reveal"
+	RoundStatusCommentary         RoundStatus = "commentary"
+	RoundStatusFinished           RoundStatus = "finished"
 )
+
+// GameType represents a supported game mode.
+type GameType struct {
+	ID          string     `json:"id" gorm:"primaryKey;type:varchar(64)"`
+	Slug        string     `json:"slug" gorm:"uniqueIndex;size:64;not null"`
+	Name        string     `json:"name" gorm:"size:100;not null"`
+	Description string     `json:"description,omitempty" gorm:"size:255"`
+	IsActive    bool       `json:"is_active" gorm:"not null;default:true"`
+	CreatedAt   time.Time  `json:"created_at" gorm:"not null;index"`
+	UpdatedAt   *time.Time `json:"updated_at,omitempty"`
+}
 
 // Room represents a game room.
 type Room struct {
 	ID           string     `json:"id" gorm:"primaryKey;type:varchar(64)"`
 	Code         string     `json:"code" gorm:"uniqueIndex;size:6;not null"`
 	HostID       string     `json:"host_id" gorm:"type:varchar(64);not null;index"`
+	GameTypeID   string     `json:"-" gorm:"type:varchar(64);index"`
+	GameType     string     `json:"game_type,omitempty" gorm:"-"`
 	MaxRounds    int        `json:"max_rounds" gorm:"not null"`
 	TimePerRound int        `json:"time_per_round" gorm:"not null"`
 	Status       RoomStatus `json:"status" gorm:"type:varchar(32);not null;index"`
@@ -75,4 +107,30 @@ type Vote struct {
 	UserID    string    `json:"user_id" gorm:"type:varchar(64);not null;uniqueIndex:idx_vote_user_round"`
 	RoundID   string    `json:"round_id" gorm:"type:varchar(64);not null;uniqueIndex:idx_vote_user_round;index"`
 	CreatedAt time.Time `json:"created_at" gorm:"not null;index"`
+}
+
+// NormalizeGameTypeSlug returns the default slug when the provided value is blank.
+func NormalizeGameTypeSlug(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return GameTypeTellYourStory
+	}
+
+	return strings.TrimSpace(value)
+}
+
+// GameTypeSlugFromID resolves the public slug for a stored game type id.
+func GameTypeSlugFromID(id string) string {
+	switch strings.TrimSpace(id) {
+	case "", GameTypeIDTellYourStory:
+		return GameTypeTellYourStory
+	case GameTypeIDThreeLiesOneTruth:
+		return GameTypeThreeLiesOneTruth
+	default:
+		return GameTypeTellYourStory
+	}
+}
+
+// IsThreeLiesOneTruthGameTypeID reports whether the provided id belongs to the new mode.
+func IsThreeLiesOneTruthGameTypeID(id string) bool {
+	return strings.TrimSpace(id) == GameTypeIDThreeLiesOneTruth
 }

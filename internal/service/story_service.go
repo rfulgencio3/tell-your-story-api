@@ -83,6 +83,10 @@ func (s *StoryService) SubmitStory(ctx context.Context, input SubmitStoryInput) 
 		return domain.Story{}, err
 	}
 
+	if domain.IsThreeLiesOneTruthGameTypeID(room.GameTypeID) {
+		return domain.Story{}, domain.ErrInvalidRoomState
+	}
+
 	if room.Status != domain.RoomStatusActive || round.Status != domain.RoundStatusWriting {
 		return domain.Story{}, domain.ErrInvalidRoundState
 	}
@@ -134,6 +138,10 @@ func (s *StoryService) GetRoundStories(ctx context.Context, roundID string) ([]S
 	room, round, err := s.lifecycle.SyncRound(ctx, round)
 	if err != nil {
 		return nil, err
+	}
+
+	if domain.IsThreeLiesOneTruthGameTypeID(room.GameTypeID) {
+		return nil, domain.ErrInvalidRoomState
 	}
 
 	if room.Status == domain.RoomStatusWaiting || round.Status == domain.RoundStatusWriting {

@@ -20,6 +20,7 @@ const maxRoomCodeGenerationAttempts = 10
 type CreateRoomInput struct {
 	HostNickname string `json:"host_nickname"`
 	HostAvatar   string `json:"host_avatar_url"`
+	GameType     string `json:"game_type"`
 	MaxRounds    int    `json:"max_rounds"`
 	TimePerRound int    `json:"time_per_round"`
 }
@@ -45,26 +46,29 @@ type RoomState struct {
 
 // RoomService contains room lifecycle logic.
 type RoomService struct {
-	cfg       config.GameConfig
-	roomRepo  repository.RoomRepository
-	userRepo  repository.UserRepository
-	roundRepo repository.RoundRepository
-	lifecycle roundLifecycle
+	cfg          config.GameConfig
+	gameTypeRepo repository.GameTypeRepository
+	roomRepo     repository.RoomRepository
+	userRepo     repository.UserRepository
+	roundRepo    repository.RoundRepository
+	lifecycle    roundLifecycle
 }
 
 // NewRoomService creates a RoomService.
 func NewRoomService(
 	cfg config.GameConfig,
+	gameTypeRepo repository.GameTypeRepository,
 	roomRepo repository.RoomRepository,
 	userRepo repository.UserRepository,
 	roundRepo repository.RoundRepository,
 ) *RoomService {
 	return &RoomService{
-		cfg:       cfg,
-		roomRepo:  roomRepo,
-		userRepo:  userRepo,
-		roundRepo: roundRepo,
-		lifecycle: newRoundLifecycle(roomRepo, roundRepo),
+		cfg:          cfg,
+		gameTypeRepo: gameTypeRepo,
+		roomRepo:     roomRepo,
+		userRepo:     userRepo,
+		roundRepo:    roundRepo,
+		lifecycle:    newRoundLifecycle(roomRepo, roundRepo),
 	}
 }
 
@@ -75,6 +79,11 @@ func (s *RoomService) CreateRoom(ctx context.Context, input CreateRoomInput) (Ro
 	}
 
 	if err := validator.RoomSettings(input.MaxRounds, input.TimePerRound); err != nil {
+		return RoomState{}, err
+	}
+
+	gameType, err := s.resolveGameType(ctx, input.GameType)
+	if err != nil {
 		return RoomState{}, err
 	}
 
@@ -98,6 +107,8 @@ func (s *RoomService) CreateRoom(ctx context.Context, input CreateRoomInput) (Ro
 		ID:           roomID,
 		Code:         roomCode,
 		HostID:       hostID,
+		GameTypeID:   gameType.ID,
+		GameType:     gameType.Slug,
 		MaxRounds:    input.MaxRounds,
 		TimePerRound: input.TimePerRound,
 		Status:       domain.RoomStatusWaiting,
@@ -138,6 +149,7 @@ func (s *RoomService) GetRoomState(ctx context.Context, code string) (RoomState,
 	if err != nil {
 		return RoomState{}, err
 	}
+	room = s.hydrateRoom(room)
 
 	if err := s.ensureRoomAvailable(ctx, room); err != nil {
 		return RoomState{}, err
@@ -161,6 +173,7 @@ func (s *RoomService) JoinRoom(ctx context.Context, code string, input JoinRoomI
 	if err != nil {
 		return RoomState{}, err
 	}
+	room = s.hydrateRoom(room)
 
 	if err := s.ensureRoomAvailable(ctx, room); err != nil {
 		return RoomState{}, err
@@ -210,6 +223,7 @@ func (s *RoomService) LeaveRoom(ctx context.Context, code string, input RoomActi
 	if err != nil {
 		return RoomState{}, err
 	}
+	room = s.hydrateRoom(room)
 
 	user, err := AuthenticateUserSession(ctx, s.userRepo, input.UserID, input.SessionToken)
 	if err != nil {
@@ -245,6 +259,7 @@ func (s *RoomService) StartGame(ctx context.Context, code string, input RoomActi
 	if err != nil {
 		return RoomState{}, err
 	}
+	room = s.hydrateRoom(room)
 
 	if err := s.ensureRoomHost(ctx, room, strings.TrimSpace(input.UserID), strings.TrimSpace(input.SessionToken)); err != nil {
 		return RoomState{}, err
@@ -256,7 +271,7 @@ func (s *RoomService) StartGame(ctx context.Context, code string, input RoomActi
 
 	switch room.Status {
 	case domain.RoomStatusWaiting:
-		round, createErr := s.newRound(room.ID, 1, room.TimePerRound)
+		round, createErr := s.newRound(room, 1)
 		if createErr != nil {
 			return RoomState{}, createErr
 		}
@@ -290,6 +305,7 @@ func (s *RoomService) PauseRound(ctx context.Context, code string, input RoomAct
 	if err != nil {
 		return RoomState{}, err
 	}
+	room = s.hydrateRoom(room)
 
 	if err := s.ensureRoomHost(ctx, room, strings.TrimSpace(input.UserID), strings.TrimSpace(input.SessionToken)); err != nil {
 		return RoomState{}, err
@@ -342,6 +358,7 @@ func (s *RoomService) NextRound(ctx context.Context, code string, input RoomActi
 	if err != nil {
 		return RoomState{}, err
 	}
+	room = s.hydrateRoom(room)
 
 	if err := s.ensureRoomHost(ctx, room, strings.TrimSpace(input.UserID), strings.TrimSpace(input.SessionToken)); err != nil {
 		return RoomState{}, err
@@ -359,6 +376,10 @@ func (s *RoomService) NextRound(ctx context.Context, code string, input RoomActi
 	currentRound, err := s.roundRepo.GetCurrentByRoomID(ctx, room.ID)
 	if err != nil {
 		return RoomState{}, err
+	}
+
+	if domain.IsThreeLiesOneTruthGameTypeID(room.GameTypeID) {
+		return RoomState{}, domain.ErrInvalidRoundState
 	}
 
 	now := time.Now().UTC()
@@ -380,7 +401,7 @@ func (s *RoomService) NextRound(ctx context.Context, code string, input RoomActi
 			return s.buildRoomState(ctx, room)
 		}
 
-		nextRound, err := s.newRound(room.ID, currentRound.RoundNumber+1, room.TimePerRound)
+		nextRound, err := s.newRound(room, currentRound.RoundNumber+1)
 		if err != nil {
 			return RoomState{}, err
 		}
@@ -401,6 +422,8 @@ func (s *RoomService) NextRound(ctx context.Context, code string, input RoomActi
 }
 
 func (s *RoomService) buildRoomState(ctx context.Context, room domain.Room) (RoomState, error) {
+	room = s.hydrateRoom(room)
+
 	users, err := s.userRepo.ListByRoomID(ctx, room.ID)
 	if err != nil {
 		return RoomState{}, fmt.Errorf("list room users: %w", err)
@@ -479,6 +502,8 @@ func (s *RoomService) ensureRoomAvailable(ctx context.Context, room domain.Room)
 }
 
 func (s *RoomService) syncRoomLifecycle(ctx context.Context, room domain.Room) (domain.Room, error) {
+	room = s.hydrateRoom(room)
+
 	currentRound, err := s.roundRepo.GetCurrentByRoomID(ctx, room.ID)
 	if errors.Is(err, domain.ErrRoundNotFound) {
 		return room, nil
@@ -495,21 +520,36 @@ func (s *RoomService) syncRoomLifecycle(ctx context.Context, room domain.Room) (
 	return room, nil
 }
 
-func (s *RoomService) newRound(roomID string, number int, timePerRoundSeconds int) (domain.Round, error) {
+func (s *RoomService) newRound(room domain.Room, number int) (domain.Round, error) {
 	roundID, err := utils.GenerateID()
 	if err != nil {
 		return domain.Round{}, fmt.Errorf("generate round id: %w", err)
 	}
 
 	now := time.Now().UTC()
-	phaseEndsAt := now.Add(time.Duration(timePerRoundSeconds) * time.Second)
+	status := domain.RoundStatusWriting
+	phaseDuration := time.Duration(room.TimePerRound) * time.Second
+	if domain.IsThreeLiesOneTruthGameTypeID(room.GameTypeID) {
+		status = domain.RoundStatusCountdown
+		phaseDuration = defaultCountdownPhaseDuration
+	}
+	phaseEndsAt := now.Add(phaseDuration)
 
 	return domain.Round{
 		ID:          roundID,
-		RoomID:      roomID,
+		RoomID:      room.ID,
 		RoundNumber: number,
-		Status:      domain.RoundStatusWriting,
+		Status:      status,
 		StartedAt:   now,
 		PhaseEndsAt: &phaseEndsAt,
 	}, nil
+}
+
+func (s *RoomService) resolveGameType(ctx context.Context, requestedSlug string) (domain.GameType, error) {
+	return s.gameTypeRepo.GetBySlug(ctx, domain.NormalizeGameTypeSlug(requestedSlug))
+}
+
+func (s *RoomService) hydrateRoom(room domain.Room) domain.Room {
+	room.GameType = domain.GameTypeSlugFromID(room.GameTypeID)
+	return room
 }

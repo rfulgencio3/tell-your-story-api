@@ -184,6 +184,8 @@ func (h *RoomHandler) nextRound(w http.ResponseWriter, r *http.Request, code str
 
 func (h *RoomHandler) writeRoomError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, domain.ErrGameTypeNotFound):
+		respond.Error(w, http.StatusBadRequest, "invalid_game_type", err.Error())
 	case errors.Is(err, domain.ErrRoomNotFound):
 		respond.Error(w, http.StatusNotFound, "room_not_found", err.Error())
 	case errors.Is(err, domain.ErrUserNotFound):

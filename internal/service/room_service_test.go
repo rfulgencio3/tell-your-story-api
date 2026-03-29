@@ -44,6 +44,10 @@ func TestCreateRoom(t *testing.T) {
 	if state.Users[0].SessionToken == "" {
 		t.Fatal("created host should receive a session token")
 	}
+
+	if state.Room.GameType != domain.GameTypeTellYourStory {
+		t.Fatalf("room game_type = %q, want %q", state.Room.GameType, domain.GameTypeTellYourStory)
+	}
 }
 
 func TestJoinRoomRejectsWhenFull(t *testing.T) {
@@ -74,6 +78,25 @@ func TestJoinRoomRejectsWhenFull(t *testing.T) {
 		Nickname: "Bob",
 	}); err != domain.ErrRoomFull {
 		t.Fatalf("JoinRoom() error = %v, want %v", err, domain.ErrRoomFull)
+	}
+}
+
+func TestCreateRoomRejectsUnsupportedGameType(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestRoomService(config.GameConfig{
+		RoomCodeLength:    6,
+		RoomExpiration:    2 * time.Hour,
+		MaxPlayersPerRoom: 10,
+	})
+
+	if _, err := svc.CreateRoom(context.Background(), CreateRoomInput{
+		HostNickname: "Host",
+		GameType:     "unknown-mode",
+		MaxRounds:    3,
+		TimePerRound: 120,
+	}); err != domain.ErrGameTypeNotFound {
+		t.Fatalf("CreateRoom() error = %v, want %v", err, domain.ErrGameTypeNotFound)
 	}
 }
 
@@ -113,6 +136,89 @@ func TestStartGameCreatesFirstRound(t *testing.T) {
 
 	if started.CurrentRound.RoundNumber != 1 {
 		t.Fatalf("round number = %d, want 1", started.CurrentRound.RoundNumber)
+	}
+}
+
+func TestStartGameCreatesCountdownRoundForThreeLiesOneTruth(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestRoomService(config.GameConfig{
+		RoomCodeLength:    6,
+		RoomExpiration:    2 * time.Hour,
+		MaxPlayersPerRoom: 10,
+	})
+
+	state, err := svc.CreateRoom(context.Background(), CreateRoomInput{
+		HostNickname: "Host",
+		GameType:     domain.GameTypeThreeLiesOneTruth,
+		MaxRounds:    3,
+		TimePerRound: 120,
+	})
+	if err != nil {
+		t.Fatalf("CreateRoom() error = %v", err)
+	}
+
+	started, err := svc.StartGame(context.Background(), state.Room.Code, RoomActionInput{
+		UserID:       state.Room.HostID,
+		SessionToken: state.Users[0].SessionToken,
+	})
+	if err != nil {
+		t.Fatalf("StartGame() error = %v", err)
+	}
+
+	if started.CurrentRound == nil {
+		t.Fatal("CurrentRound should not be nil")
+	}
+
+	if started.CurrentRound.Status != domain.RoundStatusCountdown {
+		t.Fatalf("round status = %q, want %q", started.CurrentRound.Status, domain.RoundStatusCountdown)
+	}
+}
+
+func TestGetRoomStateAdvancesThreeLiesCountdownToWriting(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestRoomService(config.GameConfig{
+		RoomCodeLength:    6,
+		RoomExpiration:    2 * time.Hour,
+		MaxPlayersPerRoom: 10,
+	})
+
+	state, err := svc.CreateRoom(context.Background(), CreateRoomInput{
+		HostNickname: "Host",
+		GameType:     domain.GameTypeThreeLiesOneTruth,
+		MaxRounds:    3,
+		TimePerRound: 120,
+	})
+	if err != nil {
+		t.Fatalf("CreateRoom() error = %v", err)
+	}
+
+	started, err := svc.StartGame(context.Background(), state.Room.Code, RoomActionInput{
+		UserID:       state.Room.HostID,
+		SessionToken: state.Users[0].SessionToken,
+	})
+	if err != nil {
+		t.Fatalf("StartGame() error = %v", err)
+	}
+
+	expiredAt := time.Now().UTC().Add(-time.Second)
+	started.CurrentRound.PhaseEndsAt = &expiredAt
+	if err := svc.roundRepo.Update(context.Background(), *started.CurrentRound); err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+
+	synced, err := svc.GetRoomState(context.Background(), state.Room.Code)
+	if err != nil {
+		t.Fatalf("GetRoomState() error = %v", err)
+	}
+
+	if synced.CurrentRound == nil {
+		t.Fatal("CurrentRound should not be nil")
+	}
+
+	if synced.CurrentRound.Status != domain.RoundStatusWriting {
+		t.Fatalf("round status = %q, want %q", synced.CurrentRound.Status, domain.RoundStatusWriting)
 	}
 }
 
@@ -272,6 +378,7 @@ func TestStartGameRejectsInvalidSessionToken(t *testing.T) {
 func newTestRoomService(cfg config.GameConfig) *RoomService {
 	return NewRoomService(
 		cfg,
+		repository.NewInMemoryGameTypeRepository(),
 		repository.NewInMemoryRoomRepository(),
 		repository.NewInMemoryUserRepository(),
 		repository.NewInMemoryRoundRepository(),

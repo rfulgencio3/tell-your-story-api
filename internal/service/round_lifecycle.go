@@ -10,6 +10,7 @@ import (
 )
 
 const defaultVotingPhaseDuration = time.Minute
+const defaultCountdownPhaseDuration = 3 * time.Second
 
 type roundLifecycle struct {
 	roomRepo  repository.RoomRepository
@@ -54,6 +55,19 @@ func (l roundLifecycle) SyncRound(ctx context.Context, round domain.Round) (doma
 		return room, round, nil
 	}
 
+	if domain.IsThreeLiesOneTruthGameTypeID(room.GameTypeID) {
+		switch round.Status {
+		case domain.RoundStatusCountdown:
+			updatedRound, err := l.advanceToWriting(ctx, round, now, room.TimePerRound)
+			if err != nil {
+				return domain.Room{}, domain.Round{}, err
+			}
+			return room, updatedRound, nil
+		default:
+			return room, round, nil
+		}
+	}
+
 	switch round.Status {
 	case domain.RoundStatusWriting:
 		updatedRound, err := l.advanceToVoting(ctx, round, now)
@@ -70,6 +84,19 @@ func (l roundLifecycle) SyncRound(ctx context.Context, round domain.Round) (doma
 	default:
 		return room, round, nil
 	}
+}
+
+func (l roundLifecycle) advanceToWriting(ctx context.Context, round domain.Round, now time.Time, durationSeconds int) (domain.Round, error) {
+	phaseEndsAt := now.Add(time.Duration(durationSeconds) * time.Second)
+	round.Status = domain.RoundStatusWriting
+	round.PhaseEndsAt = &phaseEndsAt
+	round.PausedAt = nil
+
+	if err := l.roundRepo.Update(ctx, round); err != nil {
+		return domain.Round{}, fmt.Errorf("advance round to writing: %w", err)
+	}
+
+	return round, nil
 }
 
 func (l roundLifecycle) advanceToVoting(ctx context.Context, round domain.Round, now time.Time) (domain.Round, error) {

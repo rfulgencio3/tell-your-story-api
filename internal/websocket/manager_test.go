@@ -191,7 +191,7 @@ func newManagerTestFixture(t *testing.T) *managerTestFixture {
 		RoomCodeLength:    6,
 		RoomExpiration:    2 * time.Hour,
 		MaxPlayersPerRoom: 10,
-	}, roomRepo, userRepo, roundRepo)
+	}, repository.NewInMemoryGameTypeRepository(), roomRepo, userRepo, roundRepo)
 	storyService := service.NewStoryService(roomRepo, roundRepo, userRepo, storyRepo, voteRepo)
 	voteService := service.NewVoteService(roomRepo, roundRepo, userRepo, storyRepo, voteRepo)
 

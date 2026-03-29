@@ -7,13 +7,14 @@ import (
 )
 
 const (
-	minRounds          = 1
-	maxRounds          = 5
-	minTimePerRound    = 60
-	maxTimePerRound    = 300
-	maxNicknameLength  = 50
-	maxTitleLength     = 100
-	maxStoryBodyLength = 500
+	minRounds              = 1
+	maxRounds              = 5
+	minTimePerRound        = 60
+	maxTimePerRound        = 300
+	maxNicknameLength      = 50
+	maxTitleLength         = 100
+	maxStoryBodyLength     = 500
+	truthSetStatementCount = 4
 )
 
 // RoomSettings validates host-selected room settings.
@@ -62,6 +63,30 @@ func Story(title, body string) error {
 
 	if len([]rune(trimmedBody)) > maxStoryBodyLength {
 		return fmt.Errorf("body must be at most %d characters", maxStoryBodyLength)
+	}
+
+	return nil
+}
+
+// TruthSet validates the three-lies writing payload.
+func TruthSet(statements []string, trueStatementIndex int) error {
+	if len(statements) != truthSetStatementCount {
+		return fmt.Errorf("exactly %d statements are required", truthSetStatementCount)
+	}
+
+	if trueStatementIndex < 1 || trueStatementIndex > truthSetStatementCount {
+		return fmt.Errorf("true_statement_index must be between 1 and %d", truthSetStatementCount)
+	}
+
+	for _, statement := range statements {
+		trimmed := strings.TrimSpace(statement)
+		if trimmed == "" {
+			return errors.New("all statements are required")
+		}
+
+		if len([]rune(trimmed)) > maxStoryBodyLength {
+			return fmt.Errorf("each statement must be at most %d characters", maxStoryBodyLength)
+		}
 	}
 
 	return nil

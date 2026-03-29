@@ -3,6 +3,8 @@ package domain
 import "errors"
 
 var (
+	// ErrGameTypeNotFound indicates the requested game type is unsupported.
+	ErrGameTypeNotFound = errors.New("game type not found")
 	// ErrRoomNotFound indicates the requested room does not exist.
 	ErrRoomNotFound = errors.New("room not found")
 	// ErrRoomExpired indicates the room is no longer active.
@@ -25,6 +27,8 @@ var (
 	ErrRoundNotFound = errors.New("round not found")
 	// ErrStoryNotFound indicates the requested story does not exist.
 	ErrStoryNotFound = errors.New("story not found")
+	// ErrTruthSetNotFound indicates the requested truth set does not exist.
+	ErrTruthSetNotFound = errors.New("truth set not found")
 	// ErrStoryAlreadySubmitted indicates a user already submitted a story for the round.
 	ErrStoryAlreadySubmitted = errors.New("story already submitted for this round")
 	// ErrVoteAlreadyExists indicates a user already voted in the round.
