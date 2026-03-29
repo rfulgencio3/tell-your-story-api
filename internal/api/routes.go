@@ -20,6 +20,7 @@ func NewRouter(
 	logger *slog.Logger,
 	roomService *service.RoomService,
 	truthSetService *service.TruthSetService,
+	threeLiesVoteService *service.ThreeLiesVoteService,
 	storyService *service.StoryService,
 	voteService *service.VoteService,
 	roomRepo repository.RoomRepository,
@@ -29,6 +30,7 @@ func NewRouter(
 	mux := http.NewServeMux()
 	roomHandler := handlers.NewRoomHandler(roomService, notifier)
 	threeLiesTruthSetHandler := handlers.NewThreeLiesTruthSetHandler(truthSetService, roomRepo, notifier)
+	threeLiesVoteHandler := handlers.NewThreeLiesVoteHandler(threeLiesVoteService, roomRepo, notifier)
 	storyHandler := handlers.NewStoryHandler(storyService, notifier)
 	voteHandler := handlers.NewVoteHandler(voteService, notifier)
 	docsHandler, err := apidocs.Handler()
@@ -53,6 +55,7 @@ func NewRouter(
 	mux.HandleFunc("/api/rooms", roomHandler.CreateRoom)
 	mux.HandleFunc("/api/rooms/", roomHandler.HandleRoomRoutes)
 	mux.HandleFunc("/api/three-lies/truth-sets", threeLiesTruthSetHandler.SubmitTruthSet)
+	mux.HandleFunc("/api/three-lies/votes", threeLiesVoteHandler.SubmitVote)
 	mux.HandleFunc("/api/stories", storyHandler.SubmitStory)
 	mux.HandleFunc("/api/rounds/", func(w http.ResponseWriter, r *http.Request) {
 		path := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/rounds/"), "/")

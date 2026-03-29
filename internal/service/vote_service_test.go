@@ -103,6 +103,7 @@ func newGameplayFixture(t *testing.T) gameplayFixture {
 	roomRepo := repository.NewInMemoryRoomRepository()
 	userRepo := repository.NewInMemoryUserRepository()
 	roundRepo := repository.NewInMemoryRoundRepository()
+	truthSetRepo := repository.NewInMemoryTruthSetRepository()
 	storyRepo := repository.NewInMemoryStoryRepository()
 	voteRepo := repository.NewInMemoryVoteRepository()
 
@@ -110,7 +111,7 @@ func newGameplayFixture(t *testing.T) gameplayFixture {
 		RoomCodeLength:    6,
 		RoomExpiration:    2 * time.Hour,
 		MaxPlayersPerRoom: 10,
-	}, repository.NewInMemoryGameTypeRepository(), roomRepo, userRepo, roundRepo)
+	}, repository.NewInMemoryGameTypeRepository(), roomRepo, userRepo, roundRepo, truthSetRepo)
 	storyService := NewStoryService(roomRepo, roundRepo, userRepo, storyRepo, voteRepo)
 	voteService := NewVoteService(roomRepo, roundRepo, userRepo, storyRepo, voteRepo)
 

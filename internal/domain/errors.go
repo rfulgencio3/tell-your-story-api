@@ -29,6 +29,8 @@ var (
 	ErrStoryNotFound = errors.New("story not found")
 	// ErrTruthSetNotFound indicates the requested truth set does not exist.
 	ErrTruthSetNotFound = errors.New("truth set not found")
+	// ErrTruthSetVoteNotFound indicates the requested truth set vote does not exist.
+	ErrTruthSetVoteNotFound = errors.New("truth set vote not found")
 	// ErrStoryAlreadySubmitted indicates a user already submitted a story for the round.
 	ErrStoryAlreadySubmitted = errors.New("story already submitted for this round")
 	// ErrVoteAlreadyExists indicates a user already voted in the round.
@@ -37,4 +39,6 @@ var (
 	ErrVoteNotFound = errors.New("vote not found")
 	// ErrSelfVote indicates a user attempted to vote for their own story.
 	ErrSelfVote = errors.New("users cannot vote for their own story")
+	// ErrActiveTruthSetUnavailable indicates the current round has no active truth set yet.
+	ErrActiveTruthSetUnavailable = errors.New("active truth set is not available")
 )

@@ -311,6 +311,37 @@ paths:
           $ref: '#/components/responses/ErrorResponse'
         '409':
           $ref: '#/components/responses/ErrorResponse'
+  /api/three-lies/votes:
+    post:
+      tags: [Three Lies]
+      summary: Submit or update a vote for the active truth set
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitTruthSetVoteInput'
+      responses:
+        '200':
+          description: Truth set vote updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TruthSetVoteResponse'
+        '201':
+          description: Truth set vote created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TruthSetVoteResponse'
+        '400':
+          $ref: '#/components/responses/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/ErrorResponse'
+        '409':
+          $ref: '#/components/responses/ErrorResponse'
   /api/rounds/{roundId}/stories:
     get:
       tags: [Stories]
@@ -549,6 +580,22 @@ components:
           minimum: 1
           maximum: 4
       required: [round_id, user_id, session_token, statements, true_statement_index]
+    SubmitTruthSetVoteInput:
+      type: object
+      properties:
+        round_id:
+          type: string
+        user_id:
+          type: string
+        session_token:
+          type: string
+        truth_set_id:
+          type: string
+        selected_statement_index:
+          type: integer
+          minimum: 1
+          maximum: 4
+      required: [round_id, user_id, session_token, truth_set_id, selected_statement_index]
     AuthSession:
       type: object
       properties:
@@ -583,6 +630,7 @@ components:
         room_id: { type: string }
         round_number: { type: integer }
         status: { type: string }
+        active_truth_set_id: { type: string }
         started_at: { type: string, format: date-time }
         phase_ends_at: { type: string, format: date-time, nullable: true }
         paused_at: { type: string, format: date-time, nullable: true }
@@ -630,6 +678,17 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/TruthSetStatement'
+    TruthSetVote:
+      type: object
+      properties:
+        id: { type: string }
+        room_id: { type: string }
+        round_id: { type: string }
+        truth_set_id: { type: string }
+        user_id: { type: string }
+        selected_statement_index: { type: integer }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
     RoomState:
       type: object
       properties:
@@ -724,6 +783,13 @@ components:
           properties:
             data:
               $ref: '#/components/schemas/TruthSet'
+    TruthSetVoteResponse:
+      allOf:
+        - $ref: '#/components/schemas/SuccessEnvelope'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/TruthSetVote'
     VoteSummariesResponse:
       allOf:
         - $ref: '#/components/schemas/SuccessEnvelope'

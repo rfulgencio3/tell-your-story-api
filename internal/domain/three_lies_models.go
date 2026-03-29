@@ -25,3 +25,15 @@ type TruthSetStatement struct {
 	CreatedAt      time.Time `json:"created_at" gorm:"not null;index"`
 	UpdatedAt      time.Time `json:"updated_at" gorm:"not null;index"`
 }
+
+// TruthSetVote stores one player's current vote for a presented truth set.
+type TruthSetVote struct {
+	ID                     string    `json:"id" gorm:"primaryKey;type:varchar(64)"`
+	RoomID                 string    `json:"room_id" gorm:"type:varchar(64);not null;index"`
+	RoundID                string    `json:"round_id" gorm:"type:varchar(64);not null;index"`
+	TruthSetID             string    `json:"truth_set_id" gorm:"type:varchar(64);not null;index;uniqueIndex:idx_truth_set_vote_user"`
+	UserID                 string    `json:"user_id" gorm:"type:varchar(64);not null;index;uniqueIndex:idx_truth_set_vote_user"`
+	SelectedStatementIndex int       `json:"selected_statement_index" gorm:"not null"`
+	CreatedAt              time.Time `json:"created_at" gorm:"not null;index"`
+	UpdatedAt              time.Time `json:"updated_at" gorm:"not null;index"`
+}

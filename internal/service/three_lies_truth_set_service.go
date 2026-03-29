@@ -43,7 +43,7 @@ func NewTruthSetService(
 		roundRepo:    roundRepo,
 		userRepo:     userRepo,
 		truthSetRepo: truthSetRepo,
-		lifecycle:    newRoundLifecycle(roomRepo, roundRepo),
+		lifecycle:    newRoundLifecycle(roomRepo, roundRepo, truthSetRepo),
 	}
 }
 

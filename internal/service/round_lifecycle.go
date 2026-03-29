@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"time"
 
 	"github.com/tell-your-story/backend/internal/domain"
@@ -13,14 +14,20 @@ const defaultVotingPhaseDuration = time.Minute
 const defaultCountdownPhaseDuration = 3 * time.Second
 
 type roundLifecycle struct {
-	roomRepo  repository.RoomRepository
-	roundRepo repository.RoundRepository
+	roomRepo     repository.RoomRepository
+	roundRepo    repository.RoundRepository
+	truthSetRepo repository.TruthSetRepository
 }
 
-func newRoundLifecycle(roomRepo repository.RoomRepository, roundRepo repository.RoundRepository) roundLifecycle {
+func newRoundLifecycle(
+	roomRepo repository.RoomRepository,
+	roundRepo repository.RoundRepository,
+	truthSetRepo repository.TruthSetRepository,
+) roundLifecycle {
 	return roundLifecycle{
-		roomRepo:  roomRepo,
-		roundRepo: roundRepo,
+		roomRepo:     roomRepo,
+		roundRepo:    roundRepo,
+		truthSetRepo: truthSetRepo,
 	}
 }
 
@@ -63,6 +70,12 @@ func (l roundLifecycle) SyncRound(ctx context.Context, round domain.Round) (doma
 				return domain.Room{}, domain.Round{}, err
 			}
 			return room, updatedRound, nil
+		case domain.RoundStatusWriting:
+			updatedRound, err := l.advanceToPresentationVoting(ctx, round, now)
+			if err != nil {
+				return domain.Room{}, domain.Round{}, err
+			}
+			return room, updatedRound, nil
 		default:
 			return room, round, nil
 		}
@@ -94,6 +107,52 @@ func (l roundLifecycle) advanceToWriting(ctx context.Context, round domain.Round
 
 	if err := l.roundRepo.Update(ctx, round); err != nil {
 		return domain.Round{}, fmt.Errorf("advance round to writing: %w", err)
+	}
+
+	return round, nil
+}
+
+func (l roundLifecycle) advanceToPresentationVoting(ctx context.Context, round domain.Round, now time.Time) (domain.Round, error) {
+	if l.truthSetRepo == nil {
+		return domain.Round{}, fmt.Errorf("advance round to presentation voting: truth set repository is required")
+	}
+
+	truthSets, err := l.truthSetRepo.ListByRoundID(ctx, round.ID)
+	if err != nil {
+		return domain.Round{}, fmt.Errorf("list truth sets for presentation: %w", err)
+	}
+	if len(truthSets) == 0 {
+		return domain.Round{}, domain.ErrActiveTruthSetUnavailable
+	}
+
+	if !presentationOrderAssigned(truthSets) {
+		random := rand.New(rand.NewSource(now.UnixNano()))
+		random.Shuffle(len(truthSets), func(i, j int) {
+			truthSets[i], truthSets[j] = truthSets[j], truthSets[i]
+		})
+
+		for index := range truthSets {
+			truthSets[index].PresentationOrder = index + 1
+			truthSets[index].UpdatedAt = now
+			if updateErr := l.truthSetRepo.Update(ctx, truthSets[index]); updateErr != nil {
+				return domain.Round{}, fmt.Errorf("persist presentation order: %w", updateErr)
+			}
+		}
+	}
+
+	firstTruthSet, err := firstPresentationTruthSet(ctx, l.truthSetRepo, round.ID)
+	if err != nil {
+		return domain.Round{}, err
+	}
+
+	phaseEndsAt := now.Add(defaultVotingPhaseDuration)
+	round.Status = domain.RoundStatusPresentationVoting
+	round.ActiveTruthSetID = firstTruthSet.ID
+	round.PhaseEndsAt = &phaseEndsAt
+	round.PausedAt = nil
+
+	if err := l.roundRepo.Update(ctx, round); err != nil {
+		return domain.Round{}, fmt.Errorf("advance round to presentation voting: %w", err)
 	}
 
 	return round, nil
@@ -142,4 +201,33 @@ func (l roundLifecycle) ResumeRound(ctx context.Context, round domain.Round, now
 	}
 
 	return round, nil
+}
+
+func presentationOrderAssigned(truthSets []domain.TruthSet) bool {
+	for _, truthSet := range truthSets {
+		if truthSet.PresentationOrder <= 0 {
+			return false
+		}
+	}
+
+	return true
+}
+
+func firstPresentationTruthSet(ctx context.Context, truthSetRepo repository.TruthSetRepository, roundID string) (domain.TruthSet, error) {
+	truthSets, err := truthSetRepo.ListByRoundID(ctx, roundID)
+	if err != nil {
+		return domain.TruthSet{}, fmt.Errorf("list truth sets by round: %w", err)
+	}
+	if len(truthSets) == 0 {
+		return domain.TruthSet{}, domain.ErrActiveTruthSetUnavailable
+	}
+
+	first := truthSets[0]
+	for _, truthSet := range truthSets[1:] {
+		if truthSet.PresentationOrder < first.PresentationOrder {
+			first = truthSet
+		}
+	}
+
+	return first, nil
 }

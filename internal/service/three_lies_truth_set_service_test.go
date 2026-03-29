@@ -99,7 +99,7 @@ func TestSubmitTruthSetRejectsTellYourStoryRoom(t *testing.T) {
 		RoomCodeLength:    6,
 		RoomExpiration:    2 * time.Hour,
 		MaxPlayersPerRoom: 10,
-	}, gameTypeRepo, roomRepo, userRepo, roundRepo)
+	}, gameTypeRepo, roomRepo, userRepo, roundRepo, truthSetRepo)
 	truthSetService := NewTruthSetService(roomRepo, roundRepo, userRepo, truthSetRepo)
 
 	state, err := roomService.CreateRoom(context.Background(), CreateRoomInput{
@@ -154,7 +154,7 @@ func newThreeLiesWritingFixture(t *testing.T) threeLiesWritingFixture {
 		RoomCodeLength:    6,
 		RoomExpiration:    2 * time.Hour,
 		MaxPlayersPerRoom: 10,
-	}, gameTypeRepo, roomRepo, userRepo, roundRepo)
+	}, gameTypeRepo, roomRepo, userRepo, roundRepo, truthSetRepo)
 	truthSetService := NewTruthSetService(roomRepo, roundRepo, userRepo, truthSetRepo)
 
 	state, err := roomService.CreateRoom(context.Background(), CreateRoomInput{

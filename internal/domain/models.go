@@ -79,14 +79,15 @@ type User struct {
 
 // Round represents a game round.
 type Round struct {
-	ID          string      `json:"id" gorm:"primaryKey;type:varchar(64)"`
-	RoomID      string      `json:"room_id" gorm:"type:varchar(64);not null;index"`
-	RoundNumber int         `json:"round_number" gorm:"not null"`
-	Status      RoundStatus `json:"status" gorm:"type:varchar(32);not null;index"`
-	StartedAt   time.Time   `json:"started_at" gorm:"not null;index"`
-	PhaseEndsAt *time.Time  `json:"phase_ends_at,omitempty"`
-	PausedAt    *time.Time  `json:"paused_at,omitempty"`
-	CompletedAt *time.Time  `json:"completed_at,omitempty"`
+	ID               string      `json:"id" gorm:"primaryKey;type:varchar(64)"`
+	RoomID           string      `json:"room_id" gorm:"type:varchar(64);not null;index"`
+	RoundNumber      int         `json:"round_number" gorm:"not null"`
+	Status           RoundStatus `json:"status" gorm:"type:varchar(32);not null;index"`
+	ActiveTruthSetID string      `json:"active_truth_set_id,omitempty" gorm:"type:varchar(64);index"`
+	StartedAt        time.Time   `json:"started_at" gorm:"not null;index"`
+	PhaseEndsAt      *time.Time  `json:"phase_ends_at,omitempty"`
+	PausedAt         *time.Time  `json:"paused_at,omitempty"`
+	CompletedAt      *time.Time  `json:"completed_at,omitempty"`
 }
 
 // Story represents an anonymous story submitted by a user.

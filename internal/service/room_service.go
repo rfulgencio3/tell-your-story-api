@@ -51,6 +51,7 @@ type RoomService struct {
 	roomRepo     repository.RoomRepository
 	userRepo     repository.UserRepository
 	roundRepo    repository.RoundRepository
+	truthSetRepo repository.TruthSetRepository
 	lifecycle    roundLifecycle
 }
 
@@ -61,6 +62,7 @@ func NewRoomService(
 	roomRepo repository.RoomRepository,
 	userRepo repository.UserRepository,
 	roundRepo repository.RoundRepository,
+	truthSetRepo repository.TruthSetRepository,
 ) *RoomService {
 	return &RoomService{
 		cfg:          cfg,
@@ -68,7 +70,8 @@ func NewRoomService(
 		roomRepo:     roomRepo,
 		userRepo:     userRepo,
 		roundRepo:    roundRepo,
-		lifecycle:    newRoundLifecycle(roomRepo, roundRepo),
+		truthSetRepo: truthSetRepo,
+		lifecycle:    newRoundLifecycle(roomRepo, roundRepo, truthSetRepo),
 	}
 }
 

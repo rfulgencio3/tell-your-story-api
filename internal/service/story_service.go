@@ -63,7 +63,7 @@ func NewStoryService(
 		userRepo:  userRepo,
 		storyRepo: storyRepo,
 		voteRepo:  voteRepo,
-		lifecycle: newRoundLifecycle(roomRepo, roundRepo),
+		lifecycle: newRoundLifecycle(roomRepo, roundRepo, nil),
 	}
 }
 
@@ -78,13 +78,17 @@ func (s *StoryService) SubmitStory(ctx context.Context, input SubmitStoryInput) 
 		return domain.Story{}, err
 	}
 
-	room, round, err := s.lifecycle.SyncRound(ctx, round)
+	room, err := s.roomRepo.GetByID(ctx, round.RoomID)
 	if err != nil {
 		return domain.Story{}, err
 	}
-
 	if domain.IsThreeLiesOneTruthGameTypeID(room.GameTypeID) {
 		return domain.Story{}, domain.ErrInvalidRoomState
+	}
+
+	room, round, err = s.lifecycle.SyncRound(ctx, round)
+	if err != nil {
+		return domain.Story{}, err
 	}
 
 	if room.Status != domain.RoomStatusActive || round.Status != domain.RoundStatusWriting {
@@ -135,13 +139,17 @@ func (s *StoryService) GetRoundStories(ctx context.Context, roundID string) ([]S
 		return nil, err
 	}
 
-	room, round, err := s.lifecycle.SyncRound(ctx, round)
+	room, err := s.roomRepo.GetByID(ctx, round.RoomID)
 	if err != nil {
 		return nil, err
 	}
-
 	if domain.IsThreeLiesOneTruthGameTypeID(room.GameTypeID) {
 		return nil, domain.ErrInvalidRoomState
+	}
+
+	room, round, err = s.lifecycle.SyncRound(ctx, round)
+	if err != nil {
+		return nil, err
 	}
 
 	if room.Status == domain.RoomStatusWaiting || round.Status == domain.RoundStatusWriting {

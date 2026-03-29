@@ -382,5 +382,6 @@ func newTestRoomService(cfg config.GameConfig) *RoomService {
 		repository.NewInMemoryRoomRepository(),
 		repository.NewInMemoryUserRepository(),
 		repository.NewInMemoryRoundRepository(),
+		repository.NewInMemoryTruthSetRepository(),
 	)
 }

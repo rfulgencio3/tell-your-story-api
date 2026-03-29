@@ -65,7 +65,7 @@ func NewVoteService(
 		userRepo:  userRepo,
 		storyRepo: storyRepo,
 		voteRepo:  voteRepo,
-		lifecycle: newRoundLifecycle(roomRepo, roundRepo),
+		lifecycle: newRoundLifecycle(roomRepo, roundRepo, nil),
 	}
 }
 
@@ -76,13 +76,17 @@ func (s *VoteService) SubmitVote(ctx context.Context, input SubmitVoteInput) (do
 		return domain.Vote{}, err
 	}
 
-	room, round, err := s.lifecycle.SyncRound(ctx, round)
+	room, err := s.roomRepo.GetByID(ctx, round.RoomID)
 	if err != nil {
 		return domain.Vote{}, err
 	}
-
 	if domain.IsThreeLiesOneTruthGameTypeID(room.GameTypeID) {
 		return domain.Vote{}, domain.ErrInvalidRoomState
+	}
+
+	room, round, err = s.lifecycle.SyncRound(ctx, round)
+	if err != nil {
+		return domain.Vote{}, err
 	}
 
 	if room.Status != domain.RoomStatusActive || round.Status != domain.RoundStatusVoting {

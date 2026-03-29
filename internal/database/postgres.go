@@ -55,6 +55,7 @@ func Connect(ctx context.Context, cfg config.DatabaseConfig) (*gorm.DB, error) {
 		&domain.Round{},
 		&domain.TruthSet{},
 		&domain.TruthSetStatement{},
+		&domain.TruthSetVote{},
 		&domain.Story{},
 		&domain.Vote{},
 	); err != nil {
