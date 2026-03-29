@@ -11,6 +11,7 @@ type TruthSet struct {
 	PresentationOrder  int                 `json:"presentation_order" gorm:"not null;default:0;uniqueIndex:idx_truth_set_round_order"`
 	TrueStatementIndex int                 `json:"true_statement_index" gorm:"not null"`
 	CommentaryText     string              `json:"commentary_text,omitempty" gorm:"size:500"`
+	ScoredAt           *time.Time          `json:"-" gorm:"index"`
 	CreatedAt          time.Time           `json:"created_at" gorm:"not null;index"`
 	UpdatedAt          time.Time           `json:"updated_at" gorm:"not null;index"`
 	Statements         []TruthSetStatement `json:"statements,omitempty" gorm:"foreignKey:TruthSetID;constraint:OnDelete:CASCADE"`
@@ -36,4 +37,13 @@ type TruthSetVote struct {
 	SelectedStatementIndex int       `json:"selected_statement_index" gorm:"not null"`
 	CreatedAt              time.Time `json:"created_at" gorm:"not null;index"`
 	UpdatedAt              time.Time `json:"updated_at" gorm:"not null;index"`
+}
+
+// RoomScore stores the accumulated score for one participant within a room.
+type RoomScore struct {
+	ID        string    `json:"id" gorm:"primaryKey;type:varchar(64)"`
+	RoomID    string    `json:"room_id" gorm:"type:varchar(64);not null;index;uniqueIndex:idx_room_score_user"`
+	UserID    string    `json:"user_id" gorm:"type:varchar(64);not null;index;uniqueIndex:idx_room_score_user"`
+	Score     int       `json:"score" gorm:"not null;default:0"`
+	UpdatedAt time.Time `json:"updated_at" gorm:"not null;index"`
 }

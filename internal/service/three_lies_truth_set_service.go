@@ -24,11 +24,13 @@ type SubmitTruthSetInput struct {
 
 // TruthSetService contains writing-phase logic for three-lies-one-truth.
 type TruthSetService struct {
-	roomRepo     repository.RoomRepository
-	roundRepo    repository.RoundRepository
-	userRepo     repository.UserRepository
-	truthSetRepo repository.TruthSetRepository
-	lifecycle    roundLifecycle
+	roomRepo         repository.RoomRepository
+	roundRepo        repository.RoundRepository
+	userRepo         repository.UserRepository
+	truthSetRepo     repository.TruthSetRepository
+	truthSetVoteRepo repository.TruthSetVoteRepository
+	roomScoreRepo    repository.RoomScoreRepository
+	lifecycle        roundLifecycle
 }
 
 // NewTruthSetService creates a TruthSetService.
@@ -37,13 +39,17 @@ func NewTruthSetService(
 	roundRepo repository.RoundRepository,
 	userRepo repository.UserRepository,
 	truthSetRepo repository.TruthSetRepository,
+	truthSetVoteRepo repository.TruthSetVoteRepository,
+	roomScoreRepo repository.RoomScoreRepository,
 ) *TruthSetService {
 	return &TruthSetService{
-		roomRepo:     roomRepo,
-		roundRepo:    roundRepo,
-		userRepo:     userRepo,
-		truthSetRepo: truthSetRepo,
-		lifecycle:    newRoundLifecycle(roomRepo, roundRepo, truthSetRepo),
+		roomRepo:         roomRepo,
+		roundRepo:        roundRepo,
+		userRepo:         userRepo,
+		truthSetRepo:     truthSetRepo,
+		truthSetVoteRepo: truthSetVoteRepo,
+		roomScoreRepo:    roomScoreRepo,
+		lifecycle:        newRoundLifecycle(roomRepo, roundRepo, truthSetRepo, truthSetVoteRepo, roomScoreRepo),
 	}
 }
 

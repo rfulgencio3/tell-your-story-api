@@ -28,6 +28,7 @@ type ThreeLiesVoteService struct {
 	userRepo         repository.UserRepository
 	truthSetRepo     repository.TruthSetRepository
 	truthSetVoteRepo repository.TruthSetVoteRepository
+	roomScoreRepo    repository.RoomScoreRepository
 	lifecycle        roundLifecycle
 }
 
@@ -38,6 +39,7 @@ func NewThreeLiesVoteService(
 	userRepo repository.UserRepository,
 	truthSetRepo repository.TruthSetRepository,
 	truthSetVoteRepo repository.TruthSetVoteRepository,
+	roomScoreRepo repository.RoomScoreRepository,
 ) *ThreeLiesVoteService {
 	return &ThreeLiesVoteService{
 		roomRepo:         roomRepo,
@@ -45,7 +47,8 @@ func NewThreeLiesVoteService(
 		userRepo:         userRepo,
 		truthSetRepo:     truthSetRepo,
 		truthSetVoteRepo: truthSetVoteRepo,
-		lifecycle:        newRoundLifecycle(roomRepo, roundRepo, truthSetRepo),
+		roomScoreRepo:    roomScoreRepo,
+		lifecycle:        newRoundLifecycle(roomRepo, roundRepo, truthSetRepo, truthSetVoteRepo, roomScoreRepo),
 	}
 }
 

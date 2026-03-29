@@ -39,20 +39,31 @@ type RoomActionInput struct {
 
 // RoomState is the API-facing room snapshot.
 type RoomState struct {
-	Room         domain.Room   `json:"room"`
-	Users        []domain.User `json:"users"`
-	CurrentRound *domain.Round `json:"current_round,omitempty"`
+	Room         domain.Room     `json:"room"`
+	Users        []domain.User   `json:"users"`
+	CurrentRound *domain.Round   `json:"current_round,omitempty"`
+	ThreeLies    *ThreeLiesState `json:"three_lies,omitempty"`
+}
+
+// ThreeLiesState is the API-facing payload for the three-lies-one-truth mode.
+type ThreeLiesState struct {
+	ActiveTruthSet *domain.TruthSet         `json:"active_truth_set,omitempty"`
+	VotingProgress *ThreeLiesVotingProgress `json:"voting_progress,omitempty"`
+	Reveal         *ThreeLiesRevealState    `json:"reveal,omitempty"`
+	FinalRanking   []ThreeLiesRankingEntry  `json:"final_ranking,omitempty"`
 }
 
 // RoomService contains room lifecycle logic.
 type RoomService struct {
-	cfg          config.GameConfig
-	gameTypeRepo repository.GameTypeRepository
-	roomRepo     repository.RoomRepository
-	userRepo     repository.UserRepository
-	roundRepo    repository.RoundRepository
-	truthSetRepo repository.TruthSetRepository
-	lifecycle    roundLifecycle
+	cfg              config.GameConfig
+	gameTypeRepo     repository.GameTypeRepository
+	roomRepo         repository.RoomRepository
+	userRepo         repository.UserRepository
+	roundRepo        repository.RoundRepository
+	truthSetRepo     repository.TruthSetRepository
+	truthSetVoteRepo repository.TruthSetVoteRepository
+	roomScoreRepo    repository.RoomScoreRepository
+	lifecycle        roundLifecycle
 }
 
 // NewRoomService creates a RoomService.
@@ -63,15 +74,19 @@ func NewRoomService(
 	userRepo repository.UserRepository,
 	roundRepo repository.RoundRepository,
 	truthSetRepo repository.TruthSetRepository,
+	truthSetVoteRepo repository.TruthSetVoteRepository,
+	roomScoreRepo repository.RoomScoreRepository,
 ) *RoomService {
 	return &RoomService{
-		cfg:          cfg,
-		gameTypeRepo: gameTypeRepo,
-		roomRepo:     roomRepo,
-		userRepo:     userRepo,
-		roundRepo:    roundRepo,
-		truthSetRepo: truthSetRepo,
-		lifecycle:    newRoundLifecycle(roomRepo, roundRepo, truthSetRepo),
+		cfg:              cfg,
+		gameTypeRepo:     gameTypeRepo,
+		roomRepo:         roomRepo,
+		userRepo:         userRepo,
+		roundRepo:        roundRepo,
+		truthSetRepo:     truthSetRepo,
+		truthSetVoteRepo: truthSetVoteRepo,
+		roomScoreRepo:    roomScoreRepo,
+		lifecycle:        newRoundLifecycle(roomRepo, roundRepo, truthSetRepo, truthSetVoteRepo, roomScoreRepo),
 	}
 }
 
@@ -448,8 +463,23 @@ func (s *RoomService) buildRoomState(ctx context.Context, room domain.Room) (Roo
 			return RoomState{}, err
 		}
 		state.CurrentRound = &round
+		if domain.IsThreeLiesOneTruthGameTypeID(room.GameTypeID) {
+			threeLiesState, buildErr := s.buildThreeLiesState(ctx, room, round, users)
+			if buildErr != nil {
+				return RoomState{}, buildErr
+			}
+			state.ThreeLies = threeLiesState
+		}
 	} else if !errors.Is(err, domain.ErrRoundNotFound) {
 		return RoomState{}, err
+	}
+
+	if domain.IsThreeLiesOneTruthGameTypeID(room.GameTypeID) && room.Status == domain.RoomStatusFinished {
+		threeLiesState, buildErr := s.buildThreeLiesFinishedState(ctx, room, users)
+		if buildErr != nil {
+			return RoomState{}, buildErr
+		}
+		state.ThreeLies = threeLiesState
 	}
 
 	return state, nil
@@ -515,7 +545,7 @@ func (s *RoomService) syncRoomLifecycle(ctx context.Context, room domain.Room) (
 		return domain.Room{}, err
 	}
 
-	_, _, err = s.lifecycle.SyncRound(ctx, currentRound)
+	room, _, err = s.lifecycle.SyncRound(ctx, currentRound)
 	if err != nil {
 		return domain.Room{}, err
 	}
@@ -555,4 +585,66 @@ func (s *RoomService) resolveGameType(ctx context.Context, requestedSlug string)
 func (s *RoomService) hydrateRoom(room domain.Room) domain.Room {
 	room.GameType = domain.GameTypeSlugFromID(room.GameTypeID)
 	return room
+}
+
+func (s *RoomService) buildThreeLiesState(ctx context.Context, room domain.Room, round domain.Round, users []domain.User) (*ThreeLiesState, error) {
+	state := &ThreeLiesState{}
+
+	if round.ActiveTruthSetID != "" {
+		activeTruthSet, err := s.truthSetRepo.GetByID(ctx, round.ActiveTruthSetID)
+		if err != nil {
+			return nil, err
+		}
+		state.ActiveTruthSet = &activeTruthSet
+
+		switch round.Status {
+		case domain.RoundStatusPresentationVoting:
+			votes, err := s.truthSetVoteRepo.ListByTruthSetID(ctx, activeTruthSet.ID)
+			if err != nil {
+				return nil, err
+			}
+			eligibleVoters := len(users) - 1
+			if eligibleVoters < 0 {
+				eligibleVoters = 0
+			}
+			state.VotingProgress = &ThreeLiesVotingProgress{
+				EligibleVoters: eligibleVoters,
+				SubmittedVotes: len(votes),
+			}
+		case domain.RoundStatusReveal, domain.RoundStatusCommentary:
+			revealState, err := s.buildThreeLiesRevealState(ctx, activeTruthSet)
+			if err != nil {
+				return nil, err
+			}
+			state.Reveal = revealState
+		}
+	}
+
+	return state, nil
+}
+
+func (s *RoomService) buildThreeLiesFinishedState(ctx context.Context, room domain.Room, users []domain.User) (*ThreeLiesState, error) {
+	scores, err := s.roomScoreRepo.ListByRoomID(ctx, room.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ThreeLiesState{
+		FinalRanking: buildThreeLiesFinalRanking(users, scores),
+	}, nil
+}
+
+func (s *RoomService) buildThreeLiesRevealState(ctx context.Context, truthSet domain.TruthSet) (*ThreeLiesRevealState, error) {
+	votes, err := s.truthSetVoteRepo.ListByTruthSetID(ctx, truthSet.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	_, _, revealedVotes := calculateThreeLiesScoreDelta(truthSet, votes)
+
+	return &ThreeLiesRevealState{
+		TruthSet:           truthSet,
+		TrueStatementIndex: truthSet.TrueStatementIndex,
+		RevealedVotes:      cloneRevealVotes(revealedVotes),
+	}, nil
 }

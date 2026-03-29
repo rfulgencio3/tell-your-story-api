@@ -177,14 +177,15 @@ func newThreeLiesPresentationFixture(t *testing.T, submitGuestTruthSet bool) thr
 	gameTypeRepo := repository.NewInMemoryGameTypeRepository()
 	truthSetRepo := repository.NewInMemoryTruthSetRepository()
 	truthSetVoteRepo := repository.NewInMemoryTruthSetVoteRepository()
+	roomScoreRepo := repository.NewInMemoryRoomScoreRepository()
 
 	roomService := NewRoomService(config.GameConfig{
 		RoomCodeLength:    6,
 		RoomExpiration:    2 * time.Hour,
 		MaxPlayersPerRoom: 10,
-	}, gameTypeRepo, roomRepo, userRepo, roundRepo, truthSetRepo)
-	truthSetService := NewTruthSetService(roomRepo, roundRepo, userRepo, truthSetRepo)
-	voteService := NewThreeLiesVoteService(roomRepo, roundRepo, userRepo, truthSetRepo, truthSetVoteRepo)
+	}, gameTypeRepo, roomRepo, userRepo, roundRepo, truthSetRepo, truthSetVoteRepo, roomScoreRepo)
+	truthSetService := NewTruthSetService(roomRepo, roundRepo, userRepo, truthSetRepo, truthSetVoteRepo, roomScoreRepo)
+	voteService := NewThreeLiesVoteService(roomRepo, roundRepo, userRepo, truthSetRepo, truthSetVoteRepo, roomScoreRepo)
 
 	state, err := roomService.CreateRoom(context.Background(), CreateRoomInput{
 		HostNickname: "Host",

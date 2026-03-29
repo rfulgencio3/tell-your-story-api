@@ -65,7 +65,7 @@ func NewVoteService(
 		userRepo:  userRepo,
 		storyRepo: storyRepo,
 		voteRepo:  voteRepo,
-		lifecycle: newRoundLifecycle(roomRepo, roundRepo, nil),
+		lifecycle: newRoundLifecycle(roomRepo, roundRepo, nil, nil, nil),
 	}
 }
 

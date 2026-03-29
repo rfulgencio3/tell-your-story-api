@@ -689,6 +689,54 @@ components:
         selected_statement_index: { type: integer }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
+    ThreeLiesVotingProgress:
+      type: object
+      properties:
+        eligible_voters: { type: integer }
+        submitted_votes: { type: integer }
+    ThreeLiesRevealedVote:
+      type: object
+      properties:
+        user_id: { type: string }
+        selected_statement_index: { type: integer }
+        is_correct: { type: boolean }
+    ThreeLiesRevealState:
+      type: object
+      properties:
+        truth_set:
+          $ref: '#/components/schemas/TruthSet'
+        true_statement_index: { type: integer }
+        revealed_votes:
+          type: array
+          items:
+            $ref: '#/components/schemas/ThreeLiesRevealedVote'
+    ThreeLiesRankingEntry:
+      type: object
+      properties:
+        position: { type: integer }
+        user_id: { type: string }
+        nickname: { type: string }
+        avatar_url: { type: string }
+        score: { type: integer }
+    ThreeLiesState:
+      type: object
+      properties:
+        active_truth_set:
+          allOf:
+            - $ref: '#/components/schemas/TruthSet'
+          nullable: true
+        voting_progress:
+          allOf:
+            - $ref: '#/components/schemas/ThreeLiesVotingProgress'
+          nullable: true
+        reveal:
+          allOf:
+            - $ref: '#/components/schemas/ThreeLiesRevealState'
+          nullable: true
+        final_ranking:
+          type: array
+          items:
+            $ref: '#/components/schemas/ThreeLiesRankingEntry'
     RoomState:
       type: object
       properties:
@@ -701,6 +749,10 @@ components:
         current_round:
           allOf:
             - $ref: '#/components/schemas/Round'
+          nullable: true
+        three_lies:
+          allOf:
+            - $ref: '#/components/schemas/ThreeLiesState'
           nullable: true
     StoryCard:
       type: object

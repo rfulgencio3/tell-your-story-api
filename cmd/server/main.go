@@ -35,7 +35,7 @@ func main() {
 
 	logger := pkglogger.New(cfg.Server.Env)
 
-	gameTypeRepo, roomRepo, userRepo, roundRepo, truthSetRepo, truthSetVoteRepo, storyRepo, voteRepo, db, err := buildRepositories(context.Background(), cfg, logger)
+	gameTypeRepo, roomRepo, userRepo, roundRepo, truthSetRepo, truthSetVoteRepo, roomScoreRepo, storyRepo, voteRepo, db, err := buildRepositories(context.Background(), cfg, logger)
 	if err != nil {
 		logger.Error(
 			"failed to initialize storage",
@@ -64,9 +64,9 @@ func main() {
 		}()
 	}
 
-	roomService := service.NewRoomService(cfg.Game, gameTypeRepo, roomRepo, userRepo, roundRepo, truthSetRepo)
-	truthSetService := service.NewTruthSetService(roomRepo, roundRepo, userRepo, truthSetRepo)
-	threeLiesVoteService := service.NewThreeLiesVoteService(roomRepo, roundRepo, userRepo, truthSetRepo, truthSetVoteRepo)
+	roomService := service.NewRoomService(cfg.Game, gameTypeRepo, roomRepo, userRepo, roundRepo, truthSetRepo, truthSetVoteRepo, roomScoreRepo)
+	truthSetService := service.NewTruthSetService(roomRepo, roundRepo, userRepo, truthSetRepo, truthSetVoteRepo, roomScoreRepo)
+	threeLiesVoteService := service.NewThreeLiesVoteService(roomRepo, roundRepo, userRepo, truthSetRepo, truthSetVoteRepo, roomScoreRepo)
 	storyService := service.NewStoryService(roomRepo, roundRepo, userRepo, storyRepo, voteRepo)
 	voteService := service.NewVoteService(roomRepo, roundRepo, userRepo, storyRepo, voteRepo)
 	wsManager := internalws.NewManager(logger, roomService, roomRepo, userRepo, roundRepo, storyRepo, voteRepo)
@@ -122,6 +122,7 @@ func buildRepositories(
 	repository.RoundRepository,
 	repository.TruthSetRepository,
 	repository.TruthSetVoteRepository,
+	repository.RoomScoreRepository,
 	repository.StoryRepository,
 	repository.VoteRepository,
 	*gorm.DB,
@@ -131,12 +132,12 @@ func buildRepositories(
 	case "postgres":
 		db, err := database.Connect(ctx, cfg.Database)
 		if err != nil {
-			return nil, nil, nil, nil, nil, nil, nil, nil, nil, err
+			return nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, err
 		}
 
 		gameTypeRepo := repository.NewGormGameTypeRepository(db)
 		if err := gameTypeRepo.EnsureDefaults(ctx); err != nil {
-			return nil, nil, nil, nil, nil, nil, nil, nil, nil, err
+			return nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, err
 		}
 
 		logger.Info("storage initialized", "driver", cfg.Storage.Driver, "database", cfg.Database.Name)
@@ -146,6 +147,7 @@ func buildRepositories(
 			repository.NewGormRoundRepository(db),
 			repository.NewGormTruthSetRepository(db),
 			repository.NewGormTruthSetVoteRepository(db),
+			repository.NewGormRoomScoreRepository(db),
 			repository.NewGormStoryRepository(db),
 			repository.NewGormVoteRepository(db),
 			db,
@@ -159,6 +161,7 @@ func buildRepositories(
 			repository.NewInMemoryRoundRepository(),
 			repository.NewInMemoryTruthSetRepository(),
 			repository.NewInMemoryTruthSetVoteRepository(),
+			repository.NewInMemoryRoomScoreRepository(),
 			repository.NewInMemoryStoryRepository(),
 			repository.NewInMemoryVoteRepository(),
 			nil,

@@ -94,13 +94,15 @@ func TestSubmitTruthSetRejectsTellYourStoryRoom(t *testing.T) {
 	roundRepo := repository.NewInMemoryRoundRepository()
 	gameTypeRepo := repository.NewInMemoryGameTypeRepository()
 	truthSetRepo := repository.NewInMemoryTruthSetRepository()
+	truthSetVoteRepo := repository.NewInMemoryTruthSetVoteRepository()
+	roomScoreRepo := repository.NewInMemoryRoomScoreRepository()
 
 	roomService := NewRoomService(config.GameConfig{
 		RoomCodeLength:    6,
 		RoomExpiration:    2 * time.Hour,
 		MaxPlayersPerRoom: 10,
-	}, gameTypeRepo, roomRepo, userRepo, roundRepo, truthSetRepo)
-	truthSetService := NewTruthSetService(roomRepo, roundRepo, userRepo, truthSetRepo)
+	}, gameTypeRepo, roomRepo, userRepo, roundRepo, truthSetRepo, truthSetVoteRepo, roomScoreRepo)
+	truthSetService := NewTruthSetService(roomRepo, roundRepo, userRepo, truthSetRepo, truthSetVoteRepo, roomScoreRepo)
 
 	state, err := roomService.CreateRoom(context.Background(), CreateRoomInput{
 		HostNickname: "Host",
@@ -149,13 +151,15 @@ func newThreeLiesWritingFixture(t *testing.T) threeLiesWritingFixture {
 	roundRepo := repository.NewInMemoryRoundRepository()
 	gameTypeRepo := repository.NewInMemoryGameTypeRepository()
 	truthSetRepo := repository.NewInMemoryTruthSetRepository()
+	truthSetVoteRepo := repository.NewInMemoryTruthSetVoteRepository()
+	roomScoreRepo := repository.NewInMemoryRoomScoreRepository()
 
 	roomService := NewRoomService(config.GameConfig{
 		RoomCodeLength:    6,
 		RoomExpiration:    2 * time.Hour,
 		MaxPlayersPerRoom: 10,
-	}, gameTypeRepo, roomRepo, userRepo, roundRepo, truthSetRepo)
-	truthSetService := NewTruthSetService(roomRepo, roundRepo, userRepo, truthSetRepo)
+	}, gameTypeRepo, roomRepo, userRepo, roundRepo, truthSetRepo, truthSetVoteRepo, roomScoreRepo)
+	truthSetService := NewTruthSetService(roomRepo, roundRepo, userRepo, truthSetRepo, truthSetVoteRepo, roomScoreRepo)
 
 	state, err := roomService.CreateRoom(context.Background(), CreateRoomInput{
 		HostNickname: "Host",
