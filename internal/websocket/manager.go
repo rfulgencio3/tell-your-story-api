@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"strings"
 	"sync"
@@ -43,6 +44,33 @@ type progressPayload struct {
 	Count   int    `json:"count"`
 }
 
+type phaseChangedPayload struct {
+	RoomID      string             `json:"room_id"`
+	RoundID     string             `json:"round_id,omitempty"`
+	GameType    string             `json:"game_type"`
+	RoomStatus  domain.RoomStatus  `json:"room_status"`
+	RoundStatus domain.RoundStatus `json:"round_status,omitempty"`
+	PhaseEndsAt *time.Time         `json:"phase_ends_at,omitempty"`
+}
+
+type countdownTickPayload struct {
+	RoomID      string `json:"room_id"`
+	RoundID     string `json:"round_id"`
+	SecondsLeft int    `json:"seconds_left"`
+}
+
+type truthSetPresentedPayload struct {
+	RoomID       string                     `json:"room_id"`
+	RoundID      string                     `json:"round_id"`
+	TruthSetID   string                     `json:"truth_set_id"`
+	Author       presencePayload            `json:"author"`
+	Statements   []domain.TruthSetStatement `json:"statements"`
+	VotingEndsAt *time.Time                 `json:"voting_ends_at,omitempty"`
+	CanVote      bool                       `json:"can_vote"`
+	IsAuthor     bool                       `json:"is_author"`
+	Message      string                     `json:"message,omitempty"`
+}
+
 type presencePayload struct {
 	UserID   string `json:"user_id"`
 	Nickname string `json:"nickname"`
@@ -70,9 +98,14 @@ type Manager struct {
 	voteRepo    repository.VoteRepository
 	upgrader    gorillaws.Upgrader
 
-	mu            sync.RWMutex
-	clientsByRoom map[string]map[*client]struct{}
-	lastRoomState map[string]string
+	mu                  sync.RWMutex
+	clientsByRoom       map[string]map[*client]struct{}
+	lastRoomState       map[string]string
+	lastPhaseKey        map[string]string
+	lastTruthSetKey     map[string]string
+	lastRevealKey       map[string]string
+	lastCommentaryKey   map[string]string
+	lastFinalRankingKey map[string]string
 }
 
 // NewManager creates a websocket manager.
@@ -100,8 +133,13 @@ func NewManager(
 				return true
 			},
 		},
-		clientsByRoom: make(map[string]map[*client]struct{}),
-		lastRoomState: make(map[string]string),
+		clientsByRoom:       make(map[string]map[*client]struct{}),
+		lastRoomState:       make(map[string]string),
+		lastPhaseKey:        make(map[string]string),
+		lastTruthSetKey:     make(map[string]string),
+		lastRevealKey:       make(map[string]string),
+		lastCommentaryKey:   make(map[string]string),
+		lastFinalRankingKey: make(map[string]string),
 	}
 }
 
@@ -185,6 +223,7 @@ func (m *Manager) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = conn.Close()
 		return
 	}
+	_ = m.sendSnapshotToClient(client, state)
 	_ = m.sendEventToClient(client, eventEnvelope{
 		Type:      "connection.ready",
 		RoomCode:  roomCode,
@@ -306,6 +345,11 @@ func (m *Manager) unregister(wsClient *client) {
 	if len(roomClients) == 0 {
 		delete(m.clientsByRoom, wsClient.roomCode)
 		delete(m.lastRoomState, wsClient.roomCode)
+		delete(m.lastPhaseKey, wsClient.roomCode)
+		delete(m.lastTruthSetKey, wsClient.roomCode)
+		delete(m.lastRevealKey, wsClient.roomCode)
+		delete(m.lastCommentaryKey, wsClient.roomCode)
+		delete(m.lastFinalRankingKey, wsClient.roomCode)
 	}
 
 	m.mu.Unlock()
@@ -361,17 +405,21 @@ func (m *Manager) broadcastRoomState(ctx context.Context, roomCode string, force
 	}
 
 	if !force && !m.shouldBroadcastRoomState(roomCode, string(payload)) {
-		return nil
+		return m.broadcastThreeLiesRealtime(roomCode, state)
 	}
 
 	m.setLastRoomState(roomCode, string(payload))
 
-	return m.broadcastEvent(roomCode, eventEnvelope{
+	if err := m.broadcastEvent(roomCode, eventEnvelope{
 		Type:      "room.state",
 		RoomCode:  roomCode,
 		Timestamp: time.Now().UTC(),
 		Data:      state,
-	})
+	}); err != nil {
+		return err
+	}
+
+	return m.broadcastThreeLiesRealtime(roomCode, state)
 }
 
 func (m *Manager) sendRoomStateToClient(client *client, state service.RoomState) error {
@@ -399,6 +447,15 @@ func (m *Manager) sendRoomStateToClient(client *client, state service.RoomState)
 	}
 
 	return nil
+}
+
+func (m *Manager) sendSnapshotToClient(client *client, state service.RoomState) error {
+	return m.sendEventToClient(client, eventEnvelope{
+		Type:      "room.sync.snapshot",
+		RoomCode:  client.roomCode,
+		Timestamp: time.Now().UTC(),
+		Data:      state,
+	})
 }
 
 func (m *Manager) sendEventToClient(client *client, event eventEnvelope) error {
@@ -431,6 +488,19 @@ func (m *Manager) setLastRoomState(roomCode, payload string) {
 	m.lastRoomState[roomCode] = payload
 }
 
+func (m *Manager) setLastDerivedKey(target map[string]string, roomCode, key string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	target[roomCode] = key
+}
+
+func (m *Manager) getLastDerivedKey(target map[string]string, roomCode string) string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	return target[roomCode]
+}
+
 func (m *Manager) broadcastEvent(roomCode string, event eventEnvelope) error {
 	payload, err := json.Marshal(event)
 	if err != nil {
@@ -456,6 +526,19 @@ func (m *Manager) broadcastEvent(roomCode string, event eventEnvelope) error {
 	return nil
 }
 
+func (m *Manager) clientsForRoom(roomCode string) []*client {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	roomClients := m.clientsByRoom[roomCode]
+	clientList := make([]*client, 0, len(roomClients))
+	for client := range roomClients {
+		clientList = append(clientList, client)
+	}
+
+	return clientList
+}
+
 func (m *Manager) roomCodeFromRoundID(ctx context.Context, roundID string) (string, error) {
 	round, err := m.roundRepo.GetByID(ctx, strings.TrimSpace(roundID))
 	if err != nil {
@@ -468,6 +551,237 @@ func (m *Manager) roomCodeFromRoundID(ctx context.Context, roundID string) (stri
 	}
 
 	return room.Code, nil
+}
+
+func (m *Manager) broadcastThreeLiesRealtime(roomCode string, state service.RoomState) error {
+	if state.Room.GameType != domain.GameTypeThreeLiesOneTruth || state.CurrentRound == nil {
+		if state.Room.Status == domain.RoomStatusFinished && state.ThreeLies != nil && len(state.ThreeLies.FinalRanking) > 0 {
+			return m.broadcastFinalRanking(roomCode, state)
+		}
+		return nil
+	}
+
+	if err := m.broadcastPhaseChanged(roomCode, state); err != nil {
+		return err
+	}
+
+	switch state.CurrentRound.Status {
+	case domain.RoundStatusCountdown:
+		return m.broadcastCountdownTick(roomCode, state)
+	case domain.RoundStatusPresentationVoting:
+		if err := m.broadcastTruthSetPresented(roomCode, state); err != nil {
+			return err
+		}
+		return m.broadcastTruthSetVoteProgress(roomCode, state)
+	case domain.RoundStatusReveal:
+		return m.broadcastTruthSetRevealed(roomCode, state)
+	case domain.RoundStatusCommentary:
+		return m.broadcastCommentaryStarted(roomCode, state)
+	case domain.RoundStatusFinished:
+		return m.broadcastFinalRanking(roomCode, state)
+	default:
+		return nil
+	}
+}
+
+func (m *Manager) broadcastPhaseChanged(roomCode string, state service.RoomState) error {
+	roundStatus := domain.RoundStatus("")
+	var phaseEndsAt *time.Time
+	roundID := ""
+	if state.CurrentRound != nil {
+		roundStatus = state.CurrentRound.Status
+		phaseEndsAt = state.CurrentRound.PhaseEndsAt
+		roundID = state.CurrentRound.ID
+	}
+
+	key := string(state.Room.Status) + "::" + string(roundStatus) + "::" + roundID
+	if m.getLastDerivedKey(m.lastPhaseKey, roomCode) == key {
+		return nil
+	}
+	m.setLastDerivedKey(m.lastPhaseKey, roomCode, key)
+
+	return m.broadcastEvent(roomCode, eventEnvelope{
+		Type:      "room.phase.changed",
+		RoomCode:  roomCode,
+		Timestamp: time.Now().UTC(),
+		Data: phaseChangedPayload{
+			RoomID:      state.Room.ID,
+			RoundID:     roundID,
+			GameType:    state.Room.GameType,
+			RoomStatus:  state.Room.Status,
+			RoundStatus: roundStatus,
+			PhaseEndsAt: phaseEndsAt,
+		},
+	})
+}
+
+func (m *Manager) broadcastCountdownTick(roomCode string, state service.RoomState) error {
+	if state.CurrentRound == nil {
+		return nil
+	}
+
+	return m.broadcastEvent(roomCode, eventEnvelope{
+		Type:      "room.countdown.tick",
+		RoomCode:  roomCode,
+		Timestamp: time.Now().UTC(),
+		Data: countdownTickPayload{
+			RoomID:      state.Room.ID,
+			RoundID:     state.CurrentRound.ID,
+			SecondsLeft: secondsLeftFromPhaseEnd(state.CurrentRound.PhaseEndsAt),
+		},
+	})
+}
+
+func (m *Manager) broadcastTruthSetPresented(roomCode string, state service.RoomState) error {
+	if state.CurrentRound == nil || state.ThreeLies == nil || state.ThreeLies.ActiveTruthSet == nil {
+		return nil
+	}
+
+	key := state.CurrentRound.ID + "::" + state.ThreeLies.ActiveTruthSet.ID + "::" + string(state.CurrentRound.Status)
+	if m.getLastDerivedKey(m.lastTruthSetKey, roomCode) == key {
+		return nil
+	}
+	m.setLastDerivedKey(m.lastTruthSetKey, roomCode, key)
+
+	author := findPresenceByUserID(state.Users, state.ThreeLies.ActiveTruthSet.AuthorUserID)
+	for _, wsClient := range m.clientsForRoom(roomCode) {
+		payload := truthSetPresentedPayload{
+			RoomID:       state.Room.ID,
+			RoundID:      state.CurrentRound.ID,
+			TruthSetID:   state.ThreeLies.ActiveTruthSet.ID,
+			Author:       author,
+			Statements:   append([]domain.TruthSetStatement(nil), state.ThreeLies.ActiveTruthSet.Statements...),
+			VotingEndsAt: state.CurrentRound.PhaseEndsAt,
+			CanVote:      wsClient.userID != state.ThreeLies.ActiveTruthSet.AuthorUserID,
+			IsAuthor:     wsClient.userID == state.ThreeLies.ActiveTruthSet.AuthorUserID,
+		}
+		if payload.IsAuthor {
+			payload.Message = "You are the author of this story, wait for the other players to vote"
+		}
+		if err := m.sendEventToClient(wsClient, eventEnvelope{
+			Type:      "truth_set.presented",
+			RoomCode:  roomCode,
+			Timestamp: time.Now().UTC(),
+			Data:      payload,
+		}); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (m *Manager) broadcastTruthSetVoteProgress(roomCode string, state service.RoomState) error {
+	if state.CurrentRound == nil || state.ThreeLies == nil || state.ThreeLies.VotingProgress == nil || state.ThreeLies.ActiveTruthSet == nil {
+		return nil
+	}
+
+	return m.broadcastEvent(roomCode, eventEnvelope{
+		Type:      "truth_set.vote.progress",
+		RoomCode:  roomCode,
+		Timestamp: time.Now().UTC(),
+		Data: map[string]any{
+			"room_id":         state.Room.ID,
+			"round_id":        state.CurrentRound.ID,
+			"truth_set_id":    state.ThreeLies.ActiveTruthSet.ID,
+			"eligible_voters": state.ThreeLies.VotingProgress.EligibleVoters,
+			"submitted_votes": state.ThreeLies.VotingProgress.SubmittedVotes,
+			"seconds_left":    secondsLeftFromPhaseEnd(state.CurrentRound.PhaseEndsAt),
+		},
+	})
+}
+
+func (m *Manager) broadcastTruthSetRevealed(roomCode string, state service.RoomState) error {
+	if state.CurrentRound == nil || state.ThreeLies == nil || state.ThreeLies.Reveal == nil || state.ThreeLies.ActiveTruthSet == nil {
+		return nil
+	}
+
+	key := state.CurrentRound.ID + "::" + state.ThreeLies.ActiveTruthSet.ID + "::" + string(state.CurrentRound.Status)
+	if m.getLastDerivedKey(m.lastRevealKey, roomCode) == key {
+		return nil
+	}
+	m.setLastDerivedKey(m.lastRevealKey, roomCode, key)
+
+	return m.broadcastEvent(roomCode, eventEnvelope{
+		Type:      "truth_set.revealed",
+		RoomCode:  roomCode,
+		Timestamp: time.Now().UTC(),
+		Data:      state.ThreeLies.Reveal,
+	})
+}
+
+func (m *Manager) broadcastCommentaryStarted(roomCode string, state service.RoomState) error {
+	if state.CurrentRound == nil || state.ThreeLies == nil || state.ThreeLies.ActiveTruthSet == nil {
+		return nil
+	}
+
+	key := state.CurrentRound.ID + "::" + state.ThreeLies.ActiveTruthSet.ID + "::" + string(state.CurrentRound.Status)
+	if m.getLastDerivedKey(m.lastCommentaryKey, roomCode) == key {
+		return nil
+	}
+	m.setLastDerivedKey(m.lastCommentaryKey, roomCode, key)
+
+	return m.broadcastEvent(roomCode, eventEnvelope{
+		Type:      "truth_set.commentary.started",
+		RoomCode:  roomCode,
+		Timestamp: time.Now().UTC(),
+		Data: map[string]any{
+			"room_id":        state.Room.ID,
+			"round_id":       state.CurrentRound.ID,
+			"truth_set_id":   state.ThreeLies.ActiveTruthSet.ID,
+			"author_user_id": state.ThreeLies.ActiveTruthSet.AuthorUserID,
+			"ends_at":        state.CurrentRound.PhaseEndsAt,
+		},
+	})
+}
+
+func (m *Manager) broadcastFinalRanking(roomCode string, state service.RoomState) error {
+	if state.ThreeLies == nil || len(state.ThreeLies.FinalRanking) == 0 {
+		return nil
+	}
+
+	key := state.Room.ID + "::finished"
+	if m.getLastDerivedKey(m.lastFinalRankingKey, roomCode) == key {
+		return nil
+	}
+	m.setLastDerivedKey(m.lastFinalRankingKey, roomCode, key)
+
+	return m.broadcastEvent(roomCode, eventEnvelope{
+		Type:      "room.final_ranking.ready",
+		RoomCode:  roomCode,
+		Timestamp: time.Now().UTC(),
+		Data: map[string]any{
+			"room_id": state.Room.ID,
+			"ranking": state.ThreeLies.FinalRanking,
+		},
+	})
+}
+
+func secondsLeftFromPhaseEnd(phaseEndsAt *time.Time) int {
+	if phaseEndsAt == nil {
+		return 0
+	}
+
+	secondsLeft := int(math.Ceil(time.Until(*phaseEndsAt).Seconds()))
+	if secondsLeft < 0 {
+		return 0
+	}
+
+	return secondsLeft
+}
+
+func findPresenceByUserID(users []domain.User, userID string) presencePayload {
+	for _, user := range users {
+		if user.ID == userID {
+			return presencePayload{
+				UserID:   user.ID,
+				Nickname: user.Nickname,
+				IsHost:   user.IsHost,
+			}
+		}
+	}
+
+	return presencePayload{UserID: userID}
 }
 
 func httpStatusFromDomainError(err error) int {
@@ -561,7 +875,10 @@ func (c *client) handleMessage(payload []byte) error {
 		if err != nil {
 			return err
 		}
-		return c.manager.sendRoomStateToClient(c, state)
+		if err := c.manager.sendRoomStateToClient(c, state); err != nil {
+			return err
+		}
+		return c.manager.sendSnapshotToClient(c, state)
 	case "story.progress.request":
 		return c.sendCurrentStoryProgress()
 	case "vote.progress.request":
@@ -603,6 +920,22 @@ func (c *client) sendCurrentVoteProgress() error {
 	}
 	if state.CurrentRound == nil {
 		return fmt.Errorf("room has no active round")
+	}
+
+	if state.Room.GameType == domain.GameTypeThreeLiesOneTruth && state.ThreeLies != nil && state.ThreeLies.VotingProgress != nil {
+		return c.manager.sendEventToClient(c, eventEnvelope{
+			Type:      "truth_set.vote.progress",
+			RoomCode:  c.roomCode,
+			Timestamp: time.Now().UTC(),
+			Data: map[string]any{
+				"room_id":         state.Room.ID,
+				"round_id":        state.CurrentRound.ID,
+				"truth_set_id":    state.CurrentRound.ActiveTruthSetID,
+				"eligible_voters": state.ThreeLies.VotingProgress.EligibleVoters,
+				"submitted_votes": state.ThreeLies.VotingProgress.SubmittedVotes,
+				"seconds_left":    secondsLeftFromPhaseEnd(state.CurrentRound.PhaseEndsAt),
+			},
+		})
 	}
 
 	votes, err := c.manager.voteRepo.ListByRoundID(context.Background(), state.CurrentRound.ID)

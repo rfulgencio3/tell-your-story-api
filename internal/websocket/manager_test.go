@@ -164,8 +164,106 @@ func TestManagerWebSocketHandlesClientMessages(t *testing.T) {
 	}
 }
 
+func TestManagerRoomSyncReturnsSnapshot(t *testing.T) {
+	fixture := newManagerTestFixture(t)
+
+	hostConn := fixture.mustDial(t, fixture.roomCode, fixture.hostID, fixture.hostSessionToken)
+	defer hostConn.Close()
+	fixture.expectInitialHandshake(t, hostConn, fixture.hostID)
+
+	writeClientMessage(t, hostConn, clientEnvelope{Type: "room.sync"})
+	waitForEventType(t, hostConn, "room.state")
+	snapshotEvent := waitForEventType(t, hostConn, "room.sync.snapshot")
+	snapshot := decodeRoomStatePayload(t, snapshotEvent)
+	if snapshot.Room.Code != fixture.roomCode {
+		t.Fatalf("snapshot room code = %q, want %q", snapshot.Room.Code, fixture.roomCode)
+	}
+}
+
+func TestManagerThreeLiesBroadcastsPresentationVoteRevealAndFinalRanking(t *testing.T) {
+	fixture := newThreeLiesManagerTestFixture(t)
+
+	hostConn := fixture.mustDial(t, fixture.roomCode, fixture.hostID, fixture.hostSessionToken)
+	defer hostConn.Close()
+	fixture.expectInitialHandshake(t, hostConn, fixture.hostID)
+
+	if err := fixture.manager.BroadcastRoomState(context.Background(), fixture.roomCode); err != nil {
+		t.Fatalf("BroadcastRoomState(presentation) error = %v", err)
+	}
+
+	waitForEventType(t, hostConn, "room.phase.changed")
+	presentedEvent := waitForEventType(t, hostConn, "truth_set.presented")
+	presented := decodeMapPayload(t, presentedEvent)
+	if presented["truth_set_id"] == "" {
+		t.Fatal("truth_set.presented should contain truth_set_id")
+	}
+
+	progressEvent := waitForEventType(t, hostConn, "truth_set.vote.progress")
+	progress := decodeMapPayload(t, progressEvent)
+	if progress["submitted_votes"] != float64(0) {
+		t.Fatalf("submitted_votes = %v, want 0", progress["submitted_votes"])
+	}
+
+	if _, _, err := fixture.voteService.SubmitVote(context.Background(), service.SubmitTruthSetVoteInput{
+		RoundID:                fixture.roundID,
+		UserID:                 fixture.guestID,
+		SessionToken:           fixture.guestSessionToken,
+		TruthSetID:             fixture.activeTruthSetID,
+		SelectedStatementIndex: 2,
+	}); err != nil {
+		t.Fatalf("SubmitVote() error = %v", err)
+	}
+	if err := fixture.manager.BroadcastRoomState(context.Background(), fixture.roomCode); err != nil {
+		t.Fatalf("BroadcastRoomState(vote progress) error = %v", err)
+	}
+
+	progressEvent = waitForEventType(t, hostConn, "truth_set.vote.progress")
+	progress = decodeMapPayload(t, progressEvent)
+	if progress["submitted_votes"] != float64(1) {
+		t.Fatalf("submitted_votes = %v, want 1", progress["submitted_votes"])
+	}
+
+	fixture.expireCurrentRound(t)
+	if err := fixture.manager.BroadcastRoomState(context.Background(), fixture.roomCode); err != nil {
+		t.Fatalf("BroadcastRoomState(reveal) error = %v", err)
+	}
+
+	waitForEventType(t, hostConn, "room.phase.changed")
+	revealedEvent := waitForEventType(t, hostConn, "truth_set.revealed")
+	revealed := decodeMapPayload(t, revealedEvent)
+	if revealed["true_statement_index"] != float64(2) {
+		t.Fatalf("true_statement_index = %v, want 2", revealed["true_statement_index"])
+	}
+
+	fixture.expireCurrentRound(t)
+	if err := fixture.manager.BroadcastRoomState(context.Background(), fixture.roomCode); err != nil {
+		t.Fatalf("BroadcastRoomState(commentary) error = %v", err)
+	}
+
+	waitForEventType(t, hostConn, "room.phase.changed")
+	commentaryEvent := waitForEventType(t, hostConn, "truth_set.commentary.started")
+	commentary := decodeMapPayload(t, commentaryEvent)
+	if commentary["truth_set_id"] != fixture.activeTruthSetID {
+		t.Fatalf("truth_set_id = %v, want %q", commentary["truth_set_id"], fixture.activeTruthSetID)
+	}
+
+	fixture.expireCurrentRound(t)
+	if err := fixture.manager.BroadcastRoomState(context.Background(), fixture.roomCode); err != nil {
+		t.Fatalf("BroadcastRoomState(final ranking) error = %v", err)
+	}
+
+	waitForEventType(t, hostConn, "room.phase.changed")
+	rankingEvent := waitForEventType(t, hostConn, "room.final_ranking.ready")
+	rankingPayload := decodeMapPayload(t, rankingEvent)
+	rankingItems, ok := rankingPayload["ranking"].([]any)
+	if !ok || len(rankingItems) != 2 {
+		t.Fatalf("ranking items = %v, want 2 entries", rankingPayload["ranking"])
+	}
+}
+
 type managerTestFixture struct {
 	server            *httptest.Server
+	manager           *Manager
 	roomService       *service.RoomService
 	storyService      *service.StoryService
 	voteService       *service.VoteService
@@ -239,6 +337,7 @@ func newManagerTestFixture(t *testing.T) *managerTestFixture {
 
 	return &managerTestFixture{
 		server:            server,
+		manager:           manager,
 		roomService:       roomService,
 		storyService:      storyService,
 		voteService:       voteService,
@@ -460,4 +559,213 @@ func decodeErrorPayload(t *testing.T, event testEvent) map[string]string {
 	}
 
 	return payload
+}
+
+func decodeMapPayload(t *testing.T, event testEvent) map[string]any {
+	t.Helper()
+
+	var payload map[string]any
+	if err := json.Unmarshal(event.Data, &payload); err != nil {
+		t.Fatalf("json.Unmarshal() map payload error = %v", err)
+	}
+
+	return payload
+}
+
+type threeLiesManagerFixture struct {
+	server            *httptest.Server
+	manager           *Manager
+	roomService       *service.RoomService
+	truthSetService   *service.TruthSetService
+	voteService       *service.ThreeLiesVoteService
+	roundRepo         repository.RoundRepository
+	roomCode          string
+	hostID            string
+	hostSessionToken  string
+	guestID           string
+	guestSessionToken string
+	roundID           string
+	activeTruthSetID  string
+}
+
+func newThreeLiesManagerTestFixture(t *testing.T) *threeLiesManagerFixture {
+	t.Helper()
+
+	roomRepo := repository.NewInMemoryRoomRepository()
+	userRepo := repository.NewInMemoryUserRepository()
+	roundRepo := repository.NewInMemoryRoundRepository()
+	truthSetRepo := repository.NewInMemoryTruthSetRepository()
+	truthSetVoteRepo := repository.NewInMemoryTruthSetVoteRepository()
+	roomScoreRepo := repository.NewInMemoryRoomScoreRepository()
+	storyRepo := repository.NewInMemoryStoryRepository()
+	voteRepo := repository.NewInMemoryVoteRepository()
+
+	roomService := service.NewRoomService(config.GameConfig{
+		RoomCodeLength:    6,
+		RoomExpiration:    2 * time.Hour,
+		MaxPlayersPerRoom: 10,
+	}, repository.NewInMemoryGameTypeRepository(), roomRepo, userRepo, roundRepo, truthSetRepo, truthSetVoteRepo, roomScoreRepo)
+	truthSetService := service.NewTruthSetService(roomRepo, roundRepo, userRepo, truthSetRepo, truthSetVoteRepo, roomScoreRepo)
+	threeLiesVoteService := service.NewThreeLiesVoteService(roomRepo, roundRepo, userRepo, truthSetRepo, truthSetVoteRepo, roomScoreRepo)
+
+	state, err := roomService.CreateRoom(context.Background(), service.CreateRoomInput{
+		HostNickname: "Host",
+		GameType:     domain.GameTypeThreeLiesOneTruth,
+		MaxRounds:    1,
+		TimePerRound: 120,
+	})
+	if err != nil {
+		t.Fatalf("CreateRoom() error = %v", err)
+	}
+
+	joined, err := roomService.JoinRoom(context.Background(), state.Room.Code, service.JoinRoomInput{
+		Nickname: "Guest",
+	})
+	if err != nil {
+		t.Fatalf("JoinRoom() error = %v", err)
+	}
+
+	started, err := roomService.StartGame(context.Background(), state.Room.Code, service.RoomActionInput{
+		UserID:       state.Room.HostID,
+		SessionToken: state.Users[0].SessionToken,
+	})
+	if err != nil {
+		t.Fatalf("StartGame() error = %v", err)
+	}
+
+	var guestID string
+	var guestSessionToken string
+	for _, user := range joined.Users {
+		if !user.IsHost {
+			guestID = user.ID
+			guestSessionToken = user.SessionToken
+			break
+		}
+	}
+
+	expiredAt := time.Now().UTC().Add(-time.Second)
+	started.CurrentRound.PhaseEndsAt = &expiredAt
+	if err := roundRepo.Update(context.Background(), *started.CurrentRound); err != nil {
+		t.Fatalf("Update(countdown round) error = %v", err)
+	}
+
+	writingState, err := roomService.GetRoomState(context.Background(), state.Room.Code)
+	if err != nil {
+		t.Fatalf("GetRoomState(writing) error = %v", err)
+	}
+
+	if _, _, err := truthSetService.SubmitTruthSet(context.Background(), service.SubmitTruthSetInput{
+		RoundID:            writingState.CurrentRound.ID,
+		UserID:             state.Room.HostID,
+		SessionToken:       state.Users[0].SessionToken,
+		Statements:         []string{"Host A", "Host B", "Host C", "Host D"},
+		TrueStatementIndex: 2,
+	}); err != nil {
+		t.Fatalf("SubmitTruthSet(host) error = %v", err)
+	}
+
+	writingRound, err := roundRepo.GetByID(context.Background(), writingState.CurrentRound.ID)
+	if err != nil {
+		t.Fatalf("GetByID(writing round) error = %v", err)
+	}
+	writingRound.PhaseEndsAt = &expiredAt
+	if err := roundRepo.Update(context.Background(), writingRound); err != nil {
+		t.Fatalf("Update(writing round) error = %v", err)
+	}
+
+	presentationState, err := roomService.GetRoomState(context.Background(), state.Room.Code)
+	if err != nil {
+		t.Fatalf("GetRoomState(presentation) error = %v", err)
+	}
+
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	manager := NewManager(logger, roomService, roomRepo, userRepo, roundRepo, storyRepo, voteRepo)
+	server := httptest.NewServer(manager)
+	t.Cleanup(server.Close)
+
+	return &threeLiesManagerFixture{
+		server:            server,
+		manager:           manager,
+		roomService:       roomService,
+		truthSetService:   truthSetService,
+		voteService:       threeLiesVoteService,
+		roundRepo:         roundRepo,
+		roomCode:          state.Room.Code,
+		hostID:            state.Room.HostID,
+		hostSessionToken:  state.Users[0].SessionToken,
+		guestID:           guestID,
+		guestSessionToken: guestSessionToken,
+		roundID:           presentationState.CurrentRound.ID,
+		activeTruthSetID:  presentationState.CurrentRound.ActiveTruthSetID,
+	}
+}
+
+func (f *threeLiesManagerFixture) websocketURL(roomCode, userID, sessionToken string) string {
+	baseURL := "ws" + strings.TrimPrefix(f.server.URL, "http")
+	query := url.Values{}
+	if roomCode != "" {
+		query.Set("room_code", roomCode)
+	}
+	if userID != "" {
+		query.Set("user_id", userID)
+	}
+	if sessionToken != "" {
+		query.Set("session_token", sessionToken)
+	}
+	if encoded := query.Encode(); encoded != "" {
+		return baseURL + "?" + encoded
+	}
+	return baseURL
+}
+
+func (f *threeLiesManagerFixture) mustDial(t *testing.T, roomCode, userID, sessionToken string) *gorillaws.Conn {
+	t.Helper()
+
+	conn, resp, err := gorillaws.DefaultDialer.Dial(f.websocketURL(roomCode, userID, sessionToken), nil)
+	if err != nil {
+		if resp != nil {
+			t.Fatalf("Dial() error = %v, status = %d", err, resp.StatusCode)
+		}
+		t.Fatalf("Dial() error = %v", err)
+	}
+
+	return conn
+}
+
+func (f *threeLiesManagerFixture) expectInitialHandshake(t *testing.T, conn *gorillaws.Conn, wantUserID string) {
+	t.Helper()
+
+	roomStateEvent := waitForEventType(t, conn, "room.state")
+	roomState := decodeRoomStatePayload(t, roomStateEvent)
+	if roomState.Room.Code != f.roomCode {
+		t.Fatalf("room code = %q, want %q", roomState.Room.Code, f.roomCode)
+	}
+
+	waitForEventType(t, conn, "room.sync.snapshot")
+
+	readyEvent := waitForEventType(t, conn, "connection.ready")
+	ready := decodePresencePayload(t, readyEvent)
+	if ready.UserID != wantUserID {
+		t.Fatalf("connection.ready user_id = %q, want %q", ready.UserID, wantUserID)
+	}
+
+	joinedEvent := waitForEventType(t, conn, "presence.joined")
+	joined := decodePresencePayload(t, joinedEvent)
+	if joined.UserID != wantUserID {
+		t.Fatalf("presence.joined user_id = %q, want %q", joined.UserID, wantUserID)
+	}
+}
+
+func (f *threeLiesManagerFixture) expireCurrentRound(t *testing.T) {
+	t.Helper()
+
+	round, err := f.roundRepo.GetByID(context.Background(), f.roundID)
+	if err != nil {
+		t.Fatalf("GetByID(round) error = %v", err)
+	}
+	expiredAt := time.Now().UTC().Add(-time.Second)
+	round.PhaseEndsAt = &expiredAt
+	if err := f.roundRepo.Update(context.Background(), round); err != nil {
+		t.Fatalf("Update(round) error = %v", err)
+	}
 }

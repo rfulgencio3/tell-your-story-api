@@ -30,8 +30,16 @@ paths:
         - `presence.joined`
         - `presence.left`
         - `room.state`
+        - `room.sync.snapshot`
+        - `room.phase.changed`
+        - `room.countdown.tick`
         - `story.progress`
         - `vote.progress`
+        - `truth_set.presented`
+        - `truth_set.vote.progress`
+        - `truth_set.revealed`
+        - `truth_set.commentary.started`
+        - `room.final_ranking.ready`
         - `round.revealed`
         - `room.expired`
         - `pong`
