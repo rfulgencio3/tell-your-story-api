@@ -686,6 +686,20 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/TruthSetStatement'
+    PresentedTruthSet:
+      type: object
+      properties:
+        id: { type: string }
+        room_id: { type: string }
+        round_id: { type: string }
+        author_user_id: { type: string }
+        presentation_order: { type: integer }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        statements:
+          type: array
+          items:
+            $ref: '#/components/schemas/TruthSetStatement'
     TruthSetVote:
       type: object
       properties:
@@ -731,7 +745,7 @@ components:
       properties:
         active_truth_set:
           allOf:
-            - $ref: '#/components/schemas/TruthSet'
+            - $ref: '#/components/schemas/PresentedTruthSet'
           nullable: true
         voting_progress:
           allOf:

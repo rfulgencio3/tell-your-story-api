@@ -45,9 +45,21 @@ type RoomState struct {
 	ThreeLies    *ThreeLiesState `json:"three_lies,omitempty"`
 }
 
+// ThreeLiesActiveTruthSet is the public voting-phase payload without the true answer.
+type ThreeLiesActiveTruthSet struct {
+	ID                string                     `json:"id"`
+	RoomID            string                     `json:"room_id"`
+	RoundID           string                     `json:"round_id"`
+	AuthorUserID      string                     `json:"author_user_id"`
+	PresentationOrder int                        `json:"presentation_order"`
+	CreatedAt         time.Time                  `json:"created_at"`
+	UpdatedAt         time.Time                  `json:"updated_at"`
+	Statements        []domain.TruthSetStatement `json:"statements"`
+}
+
 // ThreeLiesState is the API-facing payload for the three-lies-one-truth mode.
 type ThreeLiesState struct {
-	ActiveTruthSet *domain.TruthSet         `json:"active_truth_set,omitempty"`
+	ActiveTruthSet *ThreeLiesActiveTruthSet `json:"active_truth_set,omitempty"`
 	VotingProgress *ThreeLiesVotingProgress `json:"voting_progress,omitempty"`
 	Reveal         *ThreeLiesRevealState    `json:"reveal,omitempty"`
 	FinalRanking   []ThreeLiesRankingEntry  `json:"final_ranking,omitempty"`
@@ -595,7 +607,7 @@ func (s *RoomService) buildThreeLiesState(ctx context.Context, room domain.Room,
 		if err != nil {
 			return nil, err
 		}
-		state.ActiveTruthSet = &activeTruthSet
+		state.ActiveTruthSet = buildThreeLiesActiveTruthSet(activeTruthSet)
 
 		switch round.Status {
 		case domain.RoundStatusPresentationVoting:
@@ -647,4 +659,17 @@ func (s *RoomService) buildThreeLiesRevealState(ctx context.Context, truthSet do
 		TrueStatementIndex: truthSet.TrueStatementIndex,
 		RevealedVotes:      cloneRevealVotes(revealedVotes),
 	}, nil
+}
+
+func buildThreeLiesActiveTruthSet(truthSet domain.TruthSet) *ThreeLiesActiveTruthSet {
+	return &ThreeLiesActiveTruthSet{
+		ID:                truthSet.ID,
+		RoomID:            truthSet.RoomID,
+		RoundID:           truthSet.RoundID,
+		AuthorUserID:      truthSet.AuthorUserID,
+		PresentationOrder: truthSet.PresentationOrder,
+		CreatedAt:         truthSet.CreatedAt,
+		UpdatedAt:         truthSet.UpdatedAt,
+		Statements:        append([]domain.TruthSetStatement(nil), truthSet.Statements...),
+	}
 }
